@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 import { readSettings } from "./index.js";
 
@@ -66,4 +67,34 @@ test("the shipped row does not redeclare the catalogue", async () => {
   // Two copies of the model table is how an edit to one of them does nothing:
   // the row would win over DEFAULT_MODELS forever after installation.
   assert.doesNotMatch(row, /^\s+models:/m, "keep the catalogue in index.js only");
+});
+
+test("the CLI resolves to the copy inside the package by default", () => {
+  assert.match(readSettings({}).cliPath, /bin\/catpaw-cli$/);
+  assert.ok(existsSync(readSettings({}).cliPath), "the resolved default must exist");
+});
+
+test("the documented resolution order holds", async (t) => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "cli-order-"));
+  const own = join(dir, "my-cli");
+  writeFileSync(own, "#!/bin/sh\n");
+  const packaged = readSettings({}).cliPath;
+
+  t.after(() => {
+    delete process.env.CATPAW_CLI;
+  });
+
+  // an explicit setting always wins
+  assert.equal(readSettings({ cliPath: own }).cliPath, own);
+
+  // the environment beats the packaged copy
+  process.env.CATPAW_CLI = own;
+  assert.equal(readSettings({}).cliPath, own);
+
+  // a path that does not exist is skipped rather than trusted
+  process.env.CATPAW_CLI = join(dir, "missing");
+  assert.equal(readSettings({}).cliPath, packaged);
 });

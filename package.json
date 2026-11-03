@@ -1,6 +1,6 @@
 {
   "name": "dsh-catpaw",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "CatPaw (妙手) model bridge for DeepSeek Harness: registers the CatPaw agent's 12 models as a selectable LLM provider.",
   "type": "module",
