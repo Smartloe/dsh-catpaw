@@ -24,6 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { runLogin, validateToken, whoami } from "./login.mjs";
+import { MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 const PROVIDER = "catpaw";
 const APP_CLI =
@@ -136,14 +137,6 @@ const SYSTEM_PROMPT_MODES = new Set(["none", "transcript"]);
 const DEFAULT_MAX_PROMPT_CHARS = 120000;
 const DEFAULT_TOOL_RESULT_CHARS = 4000;
 const DEFAULT_MESSAGE_CHARS = 20000;
-
-/**
- * Text protocol used to carry tool calls through a channel that only streams
- * text. The model opens with OPEN, emits a JSON array, and closes with CLOSE;
- * the adapter turns that into real `tool-call` blocks so the harness executes.
- */
-const TOOL_CALL_OPEN = "<<<catpaw_tool_call>>>";
-const TOOL_CALL_CLOSE = "<<<end_catpaw_tool_call>>>";
 
 export const name = "dsh-catpaw";
 export const inject = ["llm", "tools"];
@@ -357,6 +350,17 @@ function clipText(text, max) {
   return `${text.slice(0, max)}\n…（已截断，原文 ${text.length} 字符）`;
 }
 
+/**
+ * CatPaw's own agent runtime ships tools that collide with ours by name
+ * (`bash`, `grep`, `write`, `web_fetch`, …) and it keeps them in the model's
+ * native tool list, where a name in a prompt reads as "call that tool". Prefix
+ * every harness tool so the model can only see one `bash`: `dsh_bash`, which
+ * exists nowhere except in the marker block. The prefix is stripped when the
+ * call is turned back into a real harness tool call.
+ */
+const TOOL_ALIAS_PREFIX = "dsh_";
+const aliasTool = (name) => `${TOOL_ALIAS_PREFIX}${name}`;
+
 /** Compact one JSON Schema into `name:type[enum]*` pairs so 100+ tools fit. */
 function compactSchema(schema) {
   const properties = schema?.properties ?? {};
@@ -373,20 +377,35 @@ function compactSchema(schema) {
 
 /** Render the tool catalogue and the call protocol the model must follow. */
 function renderToolSection(tools) {
+  const example = tools.find((tool) => tool && typeof tool.name === "string");
+  const exampleName = example?.name ? aliasTool(example.name) : aliasTool("bash");
+  const exampleArgs = example?.name === "bash" ? '{"command":"ls"}' : "{}";
   const lines = [
     "<tools>",
     "本会话提供下列工具，由宿主程序负责执行。",
-    `工具调用通过一个标记块传递：以 ${TOOL_CALL_OPEN} 开头，接一个 JSON 数组，以 ${TOOL_CALL_CLOSE} 结尾。`,
+    "",
+    "重要：CatPaw 自带的工具（bash、read_file、write、grep、glob_file_search、"
+      + "list_dir、web_fetch 等）在本会话中全部被禁用。调用它们只会收到一条拒绝消息、"
+      + "浪费一轮，而且不会产生任何效果。唯一的动作出口是下面的标记块。",
+    "宿主工具在这里带 dsh_ 前缀呈现：需要 bash 就写 dsh_bash，需要读文件就写 dsh_read。"
+      + "前缀之外的工具名一律无效，也不要抱怨名字不匹配——它们不是同一个工具。",
+    "",
+    `需要做事时，输出一个标记块：以 ${TOOL_CALL_OPEN} 开头，接一个 JSON 数组，以 ${TOOL_CALL_CLOSE} 结尾。`,
     '数组元素形如 {"name":"工具名","arguments":{...}}，arguments 需符合该工具的参数 schema。',
     "一次可以列出多个调用，按执行顺序排列；结果会作为工具结果返回，然后继续。",
-    "不需要工具时直接回答。本会话没有内置工具，动作只能通过上述标记块表达。",
+    "不需要工具时直接回答，不要输出标记块。",
+    "",
+    "示例（要执行 ls 时，输出且只输出这一块）：",
+    TOOL_CALL_OPEN,
+    `[{"name":"${exampleName}","arguments":${exampleArgs}}]`,
+    TOOL_CALL_CLOSE,
     "",
     "可用工具（参数名后带 ? 的是可选参数）：",
   ];
   for (const tool of tools) {
     if (!tool || typeof tool.name !== "string") continue;
     const description = String(tool.description ?? "").replace(/\s+/g, " ").slice(0, 180);
-    lines.push(`- ${tool.name}: ${description}`);
+    lines.push(`- ${aliasTool(tool.name)}: ${description}`);
     lines.push(`  参数: ${compactSchema(tool.parameters)}`);
   }
   lines.push("</tools>");
@@ -394,7 +413,7 @@ function renderToolSection(tools) {
 }
 
 /** Pull `{name, arguments}` entries out of whatever the model wrapped them in. */
-function parseToolCalls(payload) {
+function parseToolCalls(payload, aliases = new Map()) {
   let body = String(payload ?? "").trim();
   const fence = body.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) body = fence[1].trim();
@@ -417,8 +436,9 @@ function parseToolCalls(payload) {
   const calls = [];
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
-    const name = item.name ?? item.tool ?? item.toolName;
+    let name = item.name ?? item.tool ?? item.toolName;
     if (typeof name !== "string" || name.length === 0) continue;
+    if (name.startsWith(TOOL_ALIAS_PREFIX) && aliases.has(name)) name = aliases.get(name);
     let args = item.arguments ?? item.args ?? item.parameters ?? {};
     if (typeof args === "string") {
       try {
@@ -518,6 +538,9 @@ function renderPrompt(options, settings) {
           '[{"name":"工具名","arguments":{...}}]',
           TOOL_CALL_CLOSE,
           "标记块之外的文本会作为普通回答展示给用户。",
+          `工具名以 <tools> 列表为准（都带 ${TOOL_ALIAS_PREFIX} 前缀），不带前缀的同名工具是本会话禁用的内置工具。`,
+          "CatPaw 自带的 bash / read_file / write / grep 等工具在此会话被禁用，"
+            + "调用它们只会失败并浪费一轮；所有动作都必须通过上面的标记块表达。",
           "</tool_protocol>",
         ].join("\n")
       : "";
@@ -625,6 +648,12 @@ class CatPawAdapter {
     const model = String(options.model ?? "");
     const modelValue = /^\d+$/.test(model) ? Number(model) : model;
     const prompt = renderPrompt(options, settings);
+    const aliases = new Map();
+    for (const tool of Array.isArray(options.tools) ? options.tools : []) {
+      if (tool && typeof tool.name === "string" && tool.name.length > 0) {
+        aliases.set(aliasTool(tool.name), tool.name);
+      }
+    }
     const directory = this.resolveDirectory(options, settings);
     const entry = settings.models.find((candidate) => String(candidate.id) === model);
     const modelParams = modelParamsFor(entry, options.reasoningEffort);
@@ -680,52 +709,66 @@ class CatPawAdapter {
     const decoder = new TextDecoder();
     let buffer = "";
     let nextIndex = 0;
-    const reasoning = { block: null, text: "" };
-    const text = { block: null, text: "" };
+    // `model_chunk.content` arrives as a delta (1-4 characters per frame on this
+    // CLI); TextChannel also accepts cumulative snapshots, because the two
+    // shapes are indistinguishable per frame and other builds stream snapshots.
+    const reasoningChannel = new TextChannel();
+    const textChannel = new TextChannel();
+    const gate = new MarkerGate(textChannel);
+    const blocks = { reasoning: null, text: null };
+    const shown = { reasoning: "", text: "" };
     let errorMessage = null;
     let agentEndReason = null;
     let sawAgentEnd = false;
 
-    const pushDelta = function* (state, kind, cumulative) {
-      if (typeof cumulative !== "string" || cumulative.length === 0) return;
-      const previous = state.text;
-      const addition = cumulative.startsWith(previous) ? cumulative.slice(previous.length) : cumulative;
-      if (addition.length === 0) return;
-      if (!state.block) {
-        state.block = { index: nextIndex++, type: kind, text: "" };
-        yield { type: "block-start", index: state.block.index, blockType: kind };
+    const publish = function* (kind, piece) {
+      if (!piece) return;
+      if (!blocks[kind]) {
+        blocks[kind] = { index: nextIndex++ };
+        yield { type: "block-start", index: blocks[kind].index, blockType: kind };
       }
-      state.text = cumulative.startsWith(previous) ? cumulative : previous + addition;
-      state.block.text = state.text;
-      yield {
-        type: kind === "text" ? "text-delta" : "reasoning-delta",
-        index: state.block.index,
-        text: addition,
-      };
+      shown[kind] += piece;
+      yield { type: kind === "text" ? "text-delta" : "reasoning-delta", index: blocks[kind].index, text: piece };
     };
 
-    // The channel streams text only, so the model expresses tool calls through
-    // an explicit marker. Text streams normally; the marker may appear at any
-    // offset, so hold back the last few characters (it can split across chunks)
-    // and switch to the tool payload as soon as it shows up.
-    const MARKER_HOLD = TOOL_CALL_OPEN.length - 1;
-    let rawText = "";
-    let gateMode = "text"; // text | tool
-    let markerIndex = -1;
-    const handleText = function* (cumulative) {
-      if (typeof cumulative !== "string" || cumulative.length === 0) return;
-      rawText = cumulative;
-      if (gateMode === "tool") return;
-      const found = cumulative.indexOf(TOOL_CALL_OPEN);
-      if (found >= 0) {
-        const head = cumulative.slice(0, found);
-        if (head.length > text.text.length) yield* pushDelta(text, "text", head);
-        gateMode = "tool";
-        markerIndex = found;
-        return;
-      }
-      const safe = Math.max(text.text.length, cumulative.length - MARKER_HOLD);
-      if (safe > text.text.length) yield* pushDelta(text, "text", cumulative.slice(0, safe));
+    // One CatPaw run can contain several turns (its own tool loop, denied or
+    // not), and `model_end` reports only the CURRENT turn's message. Each turn
+    // is measured against what the channel already holds since the turn began —
+    // not against what has been published, because the marker hold-back keeps a
+    // tail unpublished and comparing with it re-appended that tail.
+    let textMark = 0;
+    let reasoningMark = 0;
+
+    const feedReasoning = function* (part) {
+      const added = reasoningChannel.push(part);
+      if (added) yield* publish("reasoning", added);
+    };
+
+    const feedText = function* (part) {
+      const piece = gate.push(part);
+      if (piece) yield* publish("text", piece);
+    };
+
+    /**
+     * `model_end` is authoritative for the turn it closes: publish only the
+     * part this turn's deltas did not already deliver. A message that is not an
+     * extension of the turn's text is ignored rather than appended, because
+     * appending it would print the turn twice.
+     */
+    const settle = function* (channel, mark, message, feed) {
+      if (typeof message !== "string" || message.length === 0) return;
+      const current = channel.text.slice(mark);
+      if (current.length > 0 && !message.startsWith(current)) return;
+      const missing = message.slice(current.length);
+      if (missing) yield* feed(missing);
+    };
+
+    const settleText = function* (message) {
+      yield* settle(textChannel, textMark, message, feedText);
+    };
+
+    const settleReasoning = function* (message) {
+      yield* settle(reasoningChannel, reasoningMark, message, feedReasoning);
     };
 
     try {
@@ -767,12 +810,8 @@ class CatPawAdapter {
           }
           switch (type) {
             case "model_chunk": {
-              yield* pushDelta(
-                reasoning,
-                "reasoning",
-                typeof data.reasoningContent === "string" ? data.reasoningContent : "",
-              );
-              yield* handleText(typeof data.content === "string" ? data.content : "");
+              yield* feedReasoning(typeof data.reasoningContent === "string" ? data.reasoningContent : "");
+              yield* feedText(typeof data.content === "string" ? data.content : "");
               break;
             }
             case "model_end": {
@@ -780,18 +819,24 @@ class CatPawAdapter {
               if (message && Array.isArray(message.content)) {
                 for (const block of message.content) {
                   if (!block || typeof block !== "object") continue;
+                  // `model_end` carries the authoritative message; feeding it
+                  // through the same channel publishes only what the stream had
+                  // not delivered yet (normally the held-back tail).
                   if (block.type === "text") {
-                    yield* pushDelta(
-                      reasoning,
-                      "reasoning",
+                    yield* settleReasoning(
                       typeof block.reasoningContent === "string" ? block.reasoningContent : "",
                     );
-                    yield* handleText(typeof block.text === "string" ? block.text : "");
+                    yield* settleText(typeof block.text === "string" ? block.text : "");
                   } else if (block.type === "reasoning") {
-                    yield* pushDelta(reasoning, "reasoning", typeof block.text === "string" ? block.text : "");
+                    yield* settleReasoning(typeof block.text === "string" ? block.text : "");
                   }
                 }
               }
+              break;
+            }
+            case "turn_end": {
+              textMark = textChannel.text.length;
+              reasoningMark = reasoningChannel.text.length;
               break;
             }
             case "agent_end": {
@@ -822,30 +867,25 @@ class CatPawAdapter {
       } catch {}
     }
 
-    if (gateMode === "text" && rawText.length > text.text.length) {
-      yield* pushDelta(text, "text", rawText);
-    }
+    // Publish whatever the hold-back window kept out of the stream.
+    yield* publish("text", gate.flush());
 
     let toolCalls = [];
-    if (gateMode === "tool") {
-      const start = markerIndex >= 0 ? markerIndex : rawText.indexOf(TOOL_CALL_OPEN);
-      const rest = start >= 0 ? rawText.slice(start + TOOL_CALL_OPEN.length) : rawText;
-      toolCalls = parseToolCalls(rest);
+    const payload = gate.payload();
+    if (gate.mode === "tool") {
+      toolCalls = parseToolCalls(payload.body, aliases);
       if (toolCalls.length === 0) {
-        const fallback = rest.split(TOOL_CALL_CLOSE).join("").trim();
-        if (fallback.length > 0) yield* pushDelta(text, "text", fallback);
+        const fallback = payload.body.trim();
+        if (fallback) yield* publish("text", fallback);
       }
     }
 
-    for (const state of [reasoning, text]) {
-      if (!state.block) continue;
+    for (const kind of ["reasoning", "text"]) {
+      if (!blocks[kind]) continue;
       yield {
         type: "block-end",
-        index: state.block.index,
-        block:
-          state.block.type === "text"
-            ? { type: "text", text: state.text }
-            : { type: "reasoning", text: state.text },
+        index: blocks[kind].index,
+        block: kind === "text" ? { type: "text", text: shown.text } : { type: "reasoning", text: shown.reasoning },
       };
     }
 
@@ -856,6 +896,15 @@ class CatPawAdapter {
       yield { type: "block-start", index, blockType: "tool-call" };
       yield { type: "tool-call-delta", index, id, name: call.name, argumentsDelta: args };
       yield { type: "block-end", index, block: { type: "tool-call", id, name: call.name, arguments: args } };
+    }
+
+    // Prose the model wrote after the closing marker used to be dropped. It is
+    // kept, as its own block, so the order matches what the model produced.
+    if (toolCalls.length > 0 && payload.trailing) {
+      const index = nextIndex++;
+      yield { type: "block-start", index, blockType: "text" };
+      yield { type: "text-delta", index, text: payload.trailing };
+      yield { type: "block-end", index, block: { type: "text", text: payload.trailing } };
     }
 
     if (options.signal?.aborted) return;
@@ -869,7 +918,7 @@ class CatPawAdapter {
       );
       return;
     }
-    if (!text.text && !reasoning.text && toolCalls.length === 0) {
+    if (!shown.text && !shown.reasoning && toolCalls.length === 0) {
       yield errorFinish(new Error("CatPaw 没有返回任何内容"));
       return;
     }

@@ -8,13 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 index.js                provider 注册、SSE 解析、工具协议、登录工具
+stream-text.mjs         增量/快照归一 + 标记块切分（可单测）
+stream-text.test.mjs    对应的 node --test
 login.mjs               扫码登录（纯 HTTP）
 cordis.patch.yml        默认模型表
 bin/catpaw-cli          妙手自带的 agent CLI（专有二进制）
 examples/               无头冒烟测试 patch
 ```
 
-修改后先跑 `node --check index.js`，再用 `examples/headless-catpaw.yml` 做一次无头验证。
+修改后先跑 `node --check index.js` 和 `node --test stream-text.test.mjs`，再用 `examples/headless-catpaw.yml` 做一次无头验证。
 
 ## 妙手应用在哪
 
@@ -34,7 +36,7 @@ examples/               无头冒烟测试 patch
 - 真正的模型是数字 `modelType`，经 `agent.start` 的 `config.model` 传入
 - 模型参数走 `dynamicContext.requestContext.modelParams`：`context`（字符串枚举）、`thinking`（`{enabled: boolean}`）、`effort`（`low|high|max`）。`thinking` 必须是对象，传字符串会被后端 Jackson 拒掉
 - 权限模式：`dontAsk`、`acceptEdits`、`default`、`plan`、`bypassPermissions`、`unsafeBypassPermissions`。没有界面时 `default` 会停在 `interaction_pending`
-- SSE 帧双层：`event.type` 是类型，字段在 `event.data`；`model_chunk` 的 `content` 是累积快照，不是增量
+- SSE 帧双层：`event.type` 是类型，字段在 `event.data`。`model_chunk.content` 是**增量**（实测每帧 1–4 字符，整轮拼接与 `model_end` 全文逐字节相同）；`model_end` 只带**本轮**文本，一次 run 可以有多轮，所以按轮对齐，不能整段再追加一次
 - CLI 云端默认地址不可达，必须在启动时注入 `CATPAW_CONFIG_CONTENT`：`{ baseURL, cookie, authTokens, source:"CatX", mode:"CATX_APP" }`
 
 ## 模型表从哪来
@@ -50,8 +52,8 @@ examples/               无头冒烟测试 patch
 DSH 通过 `options.tools` 传工具定义，但 CLI 只会流文本，所以用文本协议承载：
 
 - prompt 里的 `<tools>` 段列工具与紧凑 schema
-- 模型输出 `<<<catpaw_tool_call>>>` + JSON 数组 + `<<<end_catpaw_tool_call>>>`
-- `stream()` 用 `handleText` 逐块扫描标记（尾部预留 `TOOL_CALL_OPEN.length - 1` 字符防止被 chunk 切断），解析成 `block-start` / `tool-call-delta` / `block-end`，`finish` 用 `{kind:"tool-calls"}`
+- 模型输出 `<<<catpaw_tool_call>>>` + JSON 数组 + `<<<end_catpaw_tool_call>>>`；工具名带 `dsh_` 前缀（`dsh_bash`、`dsh_read`），解析时映射回宿主真名
+- `stream-text.mjs` 的 `TextChannel` 同时吃增量和快照，`MarkerGate` 在累积文本上扫标记（尾部预留 `MARKER_HOLD` 字符防止被帧切断）；`stream()` 把结果组装成 `block-start` / `tool-call-delta` / `block-end`，`finish` 用 `{kind:"tool-calls"}`
 - 妙手自带工具在 `dontAsk` 下被拒，Harness 工具是唯一执行路径
 - 协议在 transcript 之后重申一次（recency），否则模型会退回自带工具
 

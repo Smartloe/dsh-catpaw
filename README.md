@@ -97,7 +97,7 @@ plugin_manager install_bundle target=<repo>
 
 ```
 <<<catpaw_tool_call>>>
-[{"name":"bash","arguments":{"command":"uuidgen"}}]
+[{"name":"dsh_bash","arguments":{"command":"uuidgen"}}]
 <<<end_catpaw_tool_call>>>
 ```
 

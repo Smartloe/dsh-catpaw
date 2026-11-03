@@ -88,7 +88,7 @@ To make it the profile default, add this to `~/.dsh/profiles/desktop/cordis.patc
 
 ```
 <<<catpaw_tool_call>>>
-[{"name":"bash","arguments":{"command":"uuidgen"}}]
+[{"name":"dsh_bash","arguments":{"command":"uuidgen"}}]
 <<<end_catpaw_tool_call>>>
 ```
 
