@@ -26,7 +26,8 @@ The plugin also passes the same per-launch config the desktop app injects (`base
 
 ## Install
 
-The repository root is the plugin package, so it installs straight from GitHub:
+The repository root is the plugin package and it carries `bin/catpaw-cli`, so
+one command is the whole install:
 
 ```sh
 dsh plugin --profile web add github:Smartloe/dsh-catpaw
@@ -38,21 +39,30 @@ From a checked-out clone, a DSH session can also install it locally:
 plugin_manager install_bundle target=<repo>
 ```
 
+Then ask the agent for `catpaw_login` and scan. `catpaw_doctor` reports the
+resolved binary, the credential, the gateway, catalogue drift, the local server
+and how the previous call went.
+
 ## Login without 妙手
 
 The bridge no longer needs the desktop app to stay installed or signed in.
 
-**1. The CLI binary.** Copy it once, then the plugin prefers that copy:
+**1. The CLI binary.** Nothing to do — the package carries one. The bundled copy
+is a **macOS arm64** binary; on another platform, or to use a different build,
+point the plugin at it:
 
 ```sh
+# drop a copy where the plugin looks for it
 mkdir -p ~/.catpaw-dsh/bin
 cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@catpaw/agent-sdk/bin/catpaw-cli" ~/.catpaw-dsh/bin/
 chmod +x ~/.catpaw-dsh/bin/catpaw-cli
+
+# or name it directly
+CATPAW_CLI=/path/to/catpaw-cli dsh web
 ```
 
-Resolution order: config `cliPath` → `CATPAW_CLI` → the copy in this repository → `~/.catpaw-dsh/bin/catpaw-cli` → the 妙手 bundle.
-
-The bundled copy is a **macOS arm64** binary; on other platforms point `cliPath` at your own.
+Resolution order: config `cliPath` → `CATPAW_CLI` → the copy inside the package
+→ `~/.catpaw-dsh/bin/catpaw-cli` → the 妙手 bundle.
 
 **2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted; when something is unclear, ask the agent for `catpaw_doctor` — one report covering the resolved CLI binary, the credential, the gateway, whether the configured catalogue still matches 妙手's live one, the local server, how the previous call went, and the effective settings.
 
@@ -142,7 +152,7 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
-node --test                        # 74 cases, offline
+node --test                        # 77 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # the installed shape (what `dsh plugin add` produces): pack, install into a

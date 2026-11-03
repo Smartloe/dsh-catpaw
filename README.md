@@ -46,31 +46,40 @@ DSH agent loop
 
 ## 快速开始
 
-**1. 准备 CLI。** 仓库里的 `bin/catpaw-cli` 直接可用；如果缺了，从妙手 App 里拷一份：
+三步：装插件 → 扫码登录 → 选模型。装完就用，不需要额外准备二进制。
 
-```sh
-mkdir -p ~/.catpaw-dsh/bin
-cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@catpaw/agent-sdk/bin/catpaw-cli" ~/.catpaw-dsh/bin/
-chmod +x ~/.catpaw-dsh/bin/catpaw-cli
-```
-
-解析顺序：配置项 `cliPath` → 环境变量 `CATPAW_CLI` → 仓库内 `bin/catpaw-cli` → `~/.catpaw-dsh/bin/catpaw-cli` → 妙手 App 包内。
-
-仓库里的副本是 **macOS arm64** 的；在别的平台用 `cliPath` 指向你自己那份（妙手 App 里的同款二进制）。
-
-**2. 安装插件。**
+**1. 安装插件。** 仓库根就是插件包，包内自带 `bin/catpaw-cli`：
 
 ```sh
 # 从 GitHub 安装（推荐）
 dsh plugin --profile web add github:Smartloe/dsh-catpaw
 
-# 本地仓库已 clone 时，在 DSH 会话里也可以
+# 本地已经 clone 时，也可以从 DSH 会话里装
 plugin_manager install_bundle target=<repo>
 ```
 
 启用 `dsh-catpaw`，模型选择器里就会出现 **CatPaw (妙手)**。
 
-**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态；说不清哪里不对时，让 agent 调 `catpaw_doctor`——它一次性报告：CLI 解析到哪份二进制、凭据是否还有效、网关是否可达、**线上模型表与配置是否一致**、本地服务是否在跑、**上一次调用耗时与结果**，以及当前生效的设置。
+**2. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。
+
+**3. 确认状态。** 让 agent 调 `catpaw_doctor`，它会一次性报告：CLI 解析到哪份二进制、凭据是否还有效、网关是否可达、**线上模型表与配置是否一致**、本地服务是否在跑、**上一次调用耗时与结果**，以及当前生效的设置。
+
+### 需要换用别的 CLI 副本时
+
+包内那份是 **macOS arm64** 的。在别的平台、或想用妙手 App 自带的那份时，按下面任一方式指定：
+
+```sh
+# 方式一：拷到约定位置
+mkdir -p ~/.catpaw-dsh/bin
+cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@catpaw/agent-sdk/bin/catpaw-cli" ~/.catpaw-dsh/bin/
+chmod +x ~/.catpaw-dsh/bin/catpaw-cli
+
+# 方式二：直接告诉插件
+CATPAW_CLI=/path/to/catpaw-cli dsh web       # 环境变量
+# 或在插件行的 config 里写 cliPath
+```
+
+解析顺序：`cliPath` → `CATPAW_CLI` → 包内 `bin/catpaw-cli` → `~/.catpaw-dsh/bin/catpaw-cli` → 妙手 App 包内。
 
 ## 模型
 
@@ -148,7 +157,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test                        # 74 个用例，不联网
+node --test                        # 77 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、

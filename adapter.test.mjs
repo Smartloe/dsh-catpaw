@@ -302,3 +302,46 @@ test("the working directory follows the documented precedence", async (t) => {
   assert.equal(build(() => undefined, "/default").resolveDirectory({ sessionId: "unknown" }, settings), "/default");
   assert.equal(build(() => undefined, undefined).resolveDirectory({}, settings), process.cwd());
 });
+
+test("the model picker sees the twelve models with their reasoning rows", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+
+  const models = await adapter.listModels("catpaw");
+  assert.equal(models.length, 12);
+  assert.deepEqual(models[0], {
+    provider: "catpaw",
+    id: "10002544",
+    name: "LongCat-2.5",
+    inputModalities: ["text"],
+  });
+
+  const longcat = await adapter.resolveModel("catpaw", "10002544");
+  assert.equal(longcat.context.contextWindow, 1024000);
+  assert.equal(longcat.defaultMaxTokens, 32768);
+  assert.deepEqual(longcat.reasoning.efforts.map((effort) => effort.id), ["off", "high"]);
+
+  const auto = await adapter.resolveModel("catpaw", "0");
+  assert.equal(auto.reasoning, undefined, "Auto has no reasoning row");
+});
+
+test("an unknown model id still resolves to something usable", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  const model = await adapter.resolveModel("catpaw", "does-not-exist");
+  assert.equal(model.name, "CatPaw does-not-exist");
+  assert.equal(model.context.contextWindow, 1024000);
+});
+
+test("the provider introduces itself the way the picker expects", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  assert.deepEqual(adapter.providerInfo("catpaw"), { id: "catpaw", name: "CatPaw (妙手)" });
+  const policy = adapter.providerRetryPolicy("catpaw");
+  assert.equal(policy.mode, "normal");
+  assert.ok(policy.retryableCodes.includes("TIMEOUT"));
+  assert.ok(!policy.retryableCodes.includes("CATPAW_ERROR"));
+});
