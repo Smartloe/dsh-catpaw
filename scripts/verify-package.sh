@@ -54,6 +54,24 @@ import('dsh-catpaw').then((m) => {
 say "checking the vendored CLI is runnable"
 CLI="$TMP/app/node_modules/dsh-catpaw/bin/catpaw-cli"
 [ -x "$CLI" ] || { echo "bin/catpaw-cli lost its executable bit through packing" >&2; exit 1; }
-echo "  ok  $CLI"
+echo "  ok  executable"
+
+# The vendored build is arch-specific, so actually running it is only meaningful
+# on a matching host — an arm64 Mach-O cannot start on an x86 runner.
+HOST="$(uname -s)/$(uname -m)"
+case "$(file -b "$CLI")" in
+  *Mach-O*arm64*) CLI_PLATFORM="Darwin/arm64" ;;
+  *Mach-O*x86_64*) CLI_PLATFORM="Darwin/x86_64" ;;
+  *ELF*ARM\ aarch64*|*ELF*aarch64*) CLI_PLATFORM="Linux/arm64" ;;
+  *ELF*x86-64*) CLI_PLATFORM="Linux/x86_64" ;;
+  *) CLI_PLATFORM="unknown" ;;
+esac
+if [ "$CLI_PLATFORM" = "$HOST" ]; then
+  VERSION="$(timeout 20 "$CLI" --version 2>&1 | tail -1)"
+  echo "$VERSION" | grep -q "catpaw-cli/" || { echo "the binary did not answer --version: $VERSION" >&2; exit 1; }
+  echo "  ok  $VERSION"
+else
+  echo "  skipped a live run: binary is $CLI_PLATFORM, host is $HOST"
+fi
 
 say "ok"
