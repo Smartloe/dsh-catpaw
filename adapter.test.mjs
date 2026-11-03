@@ -234,3 +234,17 @@ test("a failed call leaves the failure in the doctor's report too", async (t) =>
   const { report } = await doctor.execute({});
   assert.match(report, /上一次调用: .*error · \d+ms — CatPaw 响应空闲超时/);
 });
+
+test("a run stopped for a permission prompt says what to change", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+  process.env.FAKE_END_REASON = "interaction_pending";
+  t.after(() => delete process.env.FAKE_END_REASON);
+  const chunks = await run(adapter);
+
+  const finish = finishOf(chunks);
+  assert.equal(finish.reason.kind, "error");
+  assert.match(finish.reason.failure.message, /permissionMode/);
+});

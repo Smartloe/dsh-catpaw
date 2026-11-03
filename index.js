@@ -1216,7 +1216,10 @@ class CatPawAdapter {
       yield* finishError(new Error("CatPaw 没有返回任何内容"), FAILURE_CODES.empty);
       return;
     }
-    record(toolCalls.length > 0 ? "tool-calls" : "stop", `${shown.text.length} 字`);
+    record(
+      toolCalls.length > 0 ? "tool-calls" : "stop",
+      toolCalls.length > 0 ? `${toolCalls.length} 个工具调用` : `${shown.text.length} 字`,
+    );
     yield { type: "finish", reason: { kind: toolCalls.length > 0 ? "tool-calls" : "stop" } };
   }
 }
