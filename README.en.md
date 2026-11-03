@@ -142,8 +142,13 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
-node --test stream-text.test.mjs prompt.test.mjs   # 18 cases, offline
+node --test prompt.test.mjs stream-text.test.mjs   # 24 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
+
+# the installed shape (what `dsh plugin add` produces): pack, install into a
+# throwaway DSH profile, compose it, answer one prompt, and confirm the vendored
+# catpaw-cli is the binary in use
+./scripts/verify-bundle.sh          # --offline skips the model call
 # stdout: 你好！有什么可以帮你的吗？
 ```
 

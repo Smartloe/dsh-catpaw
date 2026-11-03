@@ -14,9 +14,10 @@ login.mjs               扫码登录（纯 HTTP）
 cordis.patch.yml        默认模型表
 bin/catpaw-cli          妙手自带的 agent CLI（专有二进制）
 examples/               无头冒烟测试 patch
+scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 ```
 
-修改后先跑 `node --check index.js` 和 `node --test stream-text.test.mjs`，再用 `examples/headless-catpaw.yml` 做一次无头验证。
+修改后先跑 `node --check index.js` 和 `node --test prompt.test.mjs stream-text.test.mjs`，再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 
@@ -54,7 +55,7 @@ DSH 通过 `options.tools` 传工具定义，但 CLI 只会流文本，所以用
 - prompt 里的 `<tools>` 段列工具与紧凑 schema
 - 模型输出 `<<<catpaw_tool_call>>>` + JSON 数组 + `<<<end_catpaw_tool_call>>>`；工具名带 `dsh_` 前缀（`dsh_bash`、`dsh_read`），解析时映射回宿主真名
 - `stream-text.mjs` 的 `TextChannel` 同时吃增量和快照，`MarkerGate` 在累积文本上扫标记（尾部预留 `MARKER_HOLD` 字符防止被帧切断）；`stream()` 把结果组装成 `block-start` / `tool-call-delta` / `block-end`，`finish` 用 `{kind:"tool-calls"}`
-- 妙手自带的 19 个工具在启动 CLI 时用 `CATPAW_CONFIG_CONTENT.excludeTools` 排除（通配符 `*` 无效，必须逐个列名）；排除后模型只剩标记块一条路，工具调用成功率 13/14（未排除时约 1/3）
+- 妙手自带的 19 个工具在启动 CLI 时用 `CATPAW_CONFIG_CONTENT.excludeTools` 排除（通配符 `*` 无效，必须逐个列名）；排除后模型只剩标记块一条路；实测单文件 6/6、双文件 5/6（未排除时约 1/3）
 - 协议在 transcript 之后重申一次（recency），否则模型会退回自带工具
 
 改动这块时注意：`tool-call-delta` 的 `id` 不能为空、`name` 不能是空串，否则不会被装配成块。

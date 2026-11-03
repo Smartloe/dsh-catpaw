@@ -1,5 +1,7 @@
 # CatPaw (妙手) bridge for DeepSeek Harness
 
+![test](https://github.com/Smartloe/dsh-catpaw/actions/workflows/test.yml/badge.svg)
+
 把妙手（CatPaw）桌面端背后的模型接进 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）的模型选择器：12 个真实模型、可调推理等级、可回传真实工具调用，并且扫码登录后不再依赖妙手 App 常驻。
 
 > **先说适用范围。** 模型请求走 `ai.catpaw.meituan.com`，登录走 `catx.nocode.cn`，两者都是美团内网服务。**只有拥有美团账号（Passport 或 EPassport）并且能访问内网的人才能真正用起来。** 这个仓库公开的意义是分享实现，不是给外部用户提供一个可用的模型源。
@@ -145,8 +147,12 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test stream-text.test.mjs prompt.test.mjs   # 18 个用例，不联网
+node --test prompt.test.mjs stream-text.test.mjs   # 24 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
+
+# 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、
+# 组合配置、跑一句真模型调用，并确认用的是插件自带的那份 catpaw-cli
+./scripts/verify-bundle.sh           # 加 --offline 只验组合不调模型
 ```
 
 期望 stdout 输出 `你好`、退出码 `0`。这条路径加载的就是 `index.js`，和 GUI 走同一份代码。
