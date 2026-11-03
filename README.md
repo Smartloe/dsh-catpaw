@@ -164,6 +164,19 @@ echo -n "nonce-$(date +%s)" > /tmp/probe.txt
 dsh headless --patch ./examples/headless-catpaw.yml "用 bash 执行 cat /tmp/probe.txt，把内容原样告诉我"
 ```
 
+## 常见问题
+
+| 现象 | 原因与处理 |
+|---|---|
+| 回答只出来一半，或者同一段重复两次 | 1.0.x 的流式 bug（把增量当快照）。1.1.0 起已修；确认装的是新版本 |
+| 模型说"我将执行…"但什么都没做 | 它调了妙手自带工具、被拒后开始解释。1.1.0 起默认 `excludeNativeTools: true` 会把这些工具从模型手里拿走；若你手动改过这行，改回 `true` |
+| 报 `interaction_pending` | `permissionMode` 停在需要人工确认的模式。设成 `dontAsk` |
+| 报 401 / 403，或提示"登录态可能已失效" | token 过期。让 agent 调 `catpaw_login` 重新扫码 |
+| 报"找不到 catpaw-cli" | 用 `cliPath` 指到你那份二进制；仓库自带的是 macOS arm64 |
+| 一直转圈，最后超时 | 后端卡住或网络抖动。默认 5 分钟无内容帧就中止，并通知后端停止；可调 `idleTimeoutMs` / `timeoutMs` |
+| 长会话后模型忘了前面说过什么 | 单轮 prompt 有字符上限（`maxPromptChars`，默认 12 万），超出会丢最旧的消息，并在 prompt 里注明省略了多少条 |
+| 工具结果的中间部分不见了 | 单条结果超过 `toolResultChars`（默认 4000）时保留首尾、省略中间 |
+
 ## 已知限制
 
 - 模型请求是本机 `catpaw-cli` 进程，只绑 `127.0.0.1`，只有本机能调。

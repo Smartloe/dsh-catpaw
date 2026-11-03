@@ -154,6 +154,19 @@ dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好
 
 GUI: select **CatPaw 77**, send a message, and confirm the reply. The Plugins panel shows the bundle as **妙手模型桥接** with the paw icon.
 
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Answers stop halfway, or a paragraph repeats | The 1.0.x streaming bug (deltas read as snapshots). Fixed in 1.1.0 — check which version is installed |
+| The model says it will run something and then does nothing | It called one of CatPaw's own tools, was denied, and narrated that. Since 1.1.0 `excludeNativeTools` (default true) removes those tools from the model's list; put it back to `true` if you changed it |
+| `interaction_pending` | `permissionMode` is a mode that needs a human. Use `dontAsk` |
+| 401 / 403, or "the login may have expired" | The token expired. Ask the agent for `catpaw_login` |
+| "找不到 catpaw-cli" | Point `cliPath` at your binary; the bundled one is macOS arm64 |
+| It spins and then times out | The backend stalled. Five minutes without a content frame aborts the turn and stops the backend run; tune `idleTimeoutMs` / `timeoutMs` |
+| Long sessions lose earlier context | The prompt has a character budget (`maxPromptChars`, 120k by default); the oldest messages are dropped and the prompt says how many |
+| A tool result is missing its middle | Results over `toolResultChars` (4000) keep their head and tail with the middle elided |
+
 ## Limitations
 
 - Tool calling is prompt-driven: the model must emit the marker block. If it answers in prose instead, nothing executes — retry or switch model. Verified working with LongCat-2.5 (`10002544`) and DeepSeek-V4.1-Flash (`97`).
