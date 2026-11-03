@@ -31,14 +31,39 @@ const corpus = {
   text: "先说明一下，这是一段用于测试的连续文本，会被拆成很多帧送出去。",
   tool: "我来看一下。",
   longcat: "我先确认一下。",
+  reasoning: "先想清楚再回答。",
   empty: "",
   stalled: "",
 };
+
+const REASONING = "第一步，理解问题。第二步，给出结论。";
 
 function frames(answer) {
   const out = [];
   if (scenario === "stalled") {
     out.push(null); // no frames at all: the caller keeps the socket open
+    return out;
+  }
+  if (scenario === "reasoning") {
+    for (let i = 0; i < REASONING.length; i += 3) {
+      out.push({ type: "model_chunk", data: { reasoningContent: REASONING.slice(i, i + 3) } });
+    }
+    for (let i = 0; i < answer.length; i += 3) {
+      out.push({ type: "model_chunk", data: { content: answer.slice(i, i + 3) } });
+    }
+    out.push({
+      type: "model_end",
+      data: {
+        message: {
+          content: [
+            { type: "reasoning", text: REASONING },
+            { type: "text", text: answer },
+          ],
+        },
+      },
+    });
+    out.push({ type: "turn_end", data: { turn: 1, conversationId: "fake-conversation" } });
+    out.push({ type: "agent_end", data: { reason: "completed", conversationId: "fake-conversation" } });
     return out;
   }
   if (scenario === "tool") {
