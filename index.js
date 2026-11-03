@@ -92,7 +92,7 @@ const REASONING_EFFORTS = {
  * single Deep-thinking row; models with the `effort` enum advertise the full
  * Low/High/Max ladder (and Off too when they also support `thinking`).
  */
-function reasoningFor(entry) {
+export function reasoningFor(entry) {
   const params = Array.isArray(entry?.params) ? entry.params : [];
   const hasThinking = params.includes("thinking");
   const hasEffort = params.includes("effort");
@@ -110,7 +110,7 @@ function reasoningFor(entry) {
 }
 
 /** Translate a harness reasoning effort into CatPaw `modelParams`. */
-function modelParamsFor(entry, effort) {
+export function modelParamsFor(entry, effort) {
   const params = Array.isArray(entry?.params) ? entry.params : [];
   const selected = String(effort ?? entry?.defaultEffort ?? "high");
   const modelParams = {};
@@ -707,17 +707,35 @@ function renderPrompt(options, settings) {
   return [prefix, body, reminder].filter(Boolean).join("\n\n") || "（空对话）";
 }
 
-function errorFinish(error) {
+/**
+ * Failure codes the harness's retry policy understands. Anything else is
+ * treated as permanent, which is what an auth or protocol error is.
+ */
+export const FAILURE_CODES = {
+  timeout: "TIMEOUT",
+  transport: "TRANSPORT",
+  rateLimit: "RATE_LIMIT",
+  server: "SERVER",
+  empty: "EMPTY_RESPONSE",
+  permanent: "CATPAW_ERROR",
+};
+
+export function errorFinish(error, code = FAILURE_CODES.permanent) {
   return {
     type: "finish",
     reason: {
       kind: "error",
       failure: {
         message: error?.message ? String(error.message) : String(error),
-        code: "CATPAW_ERROR",
+        code: error?.code && typeof error.code === "string" ? error.code : code,
       },
     },
   };
+}
+
+/** An Error carrying the failure code its finish should report. */
+export function failure(message, code) {
+  return Object.assign(new Error(message), { code });
 }
 
 class CatPawAdapter {
@@ -732,7 +750,20 @@ class CatPawAdapter {
   }
 
   providerRetryPolicy() {
-    return undefined;
+    return {
+      mode: "normal",
+      // A stalled backend or a 429 is worth another go; two attempts keep the
+      // worst case inside a coffee break instead of the harness default of five.
+      maxRetries: 2,
+      retryableCodes: [
+        FAILURE_CODES.timeout,
+        FAILURE_CODES.rateLimit,
+        FAILURE_CODES.server,
+        FAILURE_CODES.transport,
+        FAILURE_CODES.empty,
+      ],
+      backoff: { initialDelayMs: 800, maxDelayMs: 8000, jitterRatio: 0.2 },
+    };
   }
 
   imageRequestPricing() {
@@ -842,12 +873,12 @@ class CatPawAdapter {
     const touch = () => {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
-        abort.abort(new Error("CatPaw 响应空闲超时"));
+        abort.abort(failure("CatPaw 响应空闲超时", FAILURE_CODES.timeout));
         stopBackend();
       }, settings.idleTimeoutMs);
     };
     const totalTimer = setTimeout(() => {
-      abort.abort(new Error("CatPaw 响应总超时"));
+      abort.abort(failure("CatPaw 响应总超时", FAILURE_CODES.timeout));
       stopBackend();
     }, settings.timeoutMs);
     touch();
@@ -874,7 +905,9 @@ class CatPawAdapter {
     } catch (error) {
       cleanup();
       if (options.signal?.aborted) return;
-      yield errorFinish(error);
+      // A refusal to connect is worth another attempt; a bad response is not.
+      const code = error?.code === FAILURE_CODES.timeout ? FAILURE_CODES.timeout : FAILURE_CODES.transport;
+      yield errorFinish(error, code);
       return;
     }
 
@@ -882,7 +915,16 @@ class CatPawAdapter {
       const detail = await response.text().catch(() => "");
       cleanup();
       const auth = response.status === 401 || response.status === 403 ? "（登录态可能已失效，运行 catpaw_login 重新扫码）" : "";
-      yield errorFinish(new Error(`CatPaw HTTP ${response.status}${auth}${detail ? `: ${detail.slice(0, 300)}` : ""}`));
+      const code =
+        response.status === 429
+          ? FAILURE_CODES.rateLimit
+          : response.status >= 500
+            ? FAILURE_CODES.server
+            : FAILURE_CODES.permanent;
+      yield errorFinish(
+        new Error(`CatPaw HTTP ${response.status}${auth}${detail ? `: ${detail.slice(0, 300)}` : ""}`),
+        code,
+      );
       return;
     }
 
@@ -1128,7 +1170,7 @@ class CatPawAdapter {
       return;
     }
     if (!shown.text && !shown.reasoning && toolCalls.length === 0) {
-      yield errorFinish(new Error("CatPaw 没有返回任何内容"));
+      yield errorFinish(new Error("CatPaw 没有返回任何内容"), FAILURE_CODES.empty);
       return;
     }
     yield { type: "finish", reason: { kind: toolCalls.length > 0 ? "tool-calls" : "stop" } };

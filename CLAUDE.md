@@ -9,7 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 index.js                provider 注册、SSE 解析、工具协议、登录工具
 stream-text.mjs         增量/快照归一 + 标记块切分（可单测）
-stream-text.test.mjs    对应的 node --test
+stream-text.test.mjs    流式与标记块的用例
+prompt.test.mjs         工具协议/裁剪的用例
+models.test.mjs         推理档位映射的用例
 login.mjs               扫码登录（纯 HTTP）
 cordis.patch.yml        默认模型表
 bin/catpaw-cli          妙手自带的 agent CLI（专有二进制）
@@ -17,7 +19,7 @@ examples/               无头冒烟测试 patch
 scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 ```
 
-修改后先跑 `node --check index.js` 和 `node --test prompt.test.mjs stream-text.test.mjs`，再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
+修改后先跑 `node --check index.js` 和 `node --test`（三个用例文件，40 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 

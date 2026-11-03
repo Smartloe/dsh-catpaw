@@ -18,4 +18,4 @@ jobs:
           node --check login.mjs
           node --check stream-text.mjs
       - name: Unit tests
-        run: node --test prompt.test.mjs stream-text.test.mjs
+        run: node --test

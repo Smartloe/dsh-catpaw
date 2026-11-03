@@ -142,7 +142,7 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
-node --test prompt.test.mjs stream-text.test.mjs   # 24 cases, offline
+node --test                        # 40 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # the installed shape (what `dsh plugin add` produces): pack, install into a
