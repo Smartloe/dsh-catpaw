@@ -1,6 +1,6 @@
 # CatPaw (妙手) model bridge
 
-`@local/catpaw-llm` registers a `catpaw` LLM provider on DeepSeek Harness's `llm` service, so 妙手's 12 real models (LongCat, GLM, DeepSeek, MiniMax, Kimi, Auto) are selectable in the model picker as **CatPaw (妙手)**.
+`@local/dsh-catpaw` registers a `catpaw` LLM provider on DeepSeek Harness's `llm` service, so 妙手's 12 real models (LongCat, GLM, DeepSeek, MiniMax, Kimi, Auto) are selectable in the model picker as **CatPaw (妙手)**.
 
 ## What it does
 
@@ -30,7 +30,7 @@ The bundle is already installed in the `desktop` profile. To reinstall:
 
 ```
 # from a DSH session with the plugin_manager tool
-plugin_manager install_bundle target=<repo>/catpaw-llm
+plugin_manager install_bundle target=<repo>/plugin
 ```
 
 ## Login without 妙手

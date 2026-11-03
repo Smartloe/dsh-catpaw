@@ -145,11 +145,11 @@ const DEFAULT_MESSAGE_CHARS = 20000;
 const TOOL_CALL_OPEN = "<<<catpaw_tool_call>>>";
 const TOOL_CALL_CLOSE = "<<<end_catpaw_tool_call>>>";
 
-export const name = "catpaw-llm";
+export const name = "dsh-catpaw";
 export const inject = ["llm", "tools"];
 
 function debugLog(enabled, ...args) {
-  if (enabled) console.error("[catpaw-llm]", ...args);
+  if (enabled) console.error("[dsh-catpaw]", ...args);
 }
 
 function readValue(value, fallback) {
@@ -375,12 +375,11 @@ function compactSchema(schema) {
 function renderToolSection(tools) {
   const lines = [
     "<tools>",
-    "你可以调用下列工具，它们在 DeepSeek Harness 里真实执行。规则：",
-    `1. 要调用工具时，回复必须以 ${TOOL_CALL_OPEN} 开头，紧接着一个 JSON 数组，最后是 ${TOOL_CALL_CLOSE}。`,
-    '2. 数组元素形如 {"name":"工具名","arguments":{...}}，arguments 必须符合该工具的参数 schema。',
-    "3. 一次可以调用多个工具，按执行顺序排列。收到结果后继续，直到任务完成。",
-    "4. 不调用工具时直接回答，不要出现这两个标记。",
-    "5. 不要使用妙手自带的内置工具，也不要假装执行命令或伪造输出；所有动作只能通过上面的协议表达。",
+    "本会话提供下列工具，由宿主程序负责执行。",
+    `工具调用通过一个标记块传递：以 ${TOOL_CALL_OPEN} 开头，接一个 JSON 数组，以 ${TOOL_CALL_CLOSE} 结尾。`,
+    '数组元素形如 {"name":"工具名","arguments":{...}}，arguments 需符合该工具的参数 schema。',
+    "一次可以列出多个调用，按执行顺序排列；结果会作为工具结果返回，然后继续。",
+    "不需要工具时直接回答。本会话没有内置工具，动作只能通过上述标记块表达。",
     "",
     "可用工具（参数名后带 ? 的是可选参数）：",
   ];
@@ -514,12 +513,12 @@ function renderPrompt(options, settings) {
     tools.length > 0
       ? [
           "",
-          "<tool_reminder>",
-          `调用工具时只使用这个格式：${TOOL_CALL_OPEN}`,
+          "<tool_protocol>",
+          `工具调用格式：${TOOL_CALL_OPEN}`,
           '[{"name":"工具名","arguments":{...}}]',
           TOOL_CALL_CLOSE,
-          "如果你的内置工具被拒绝或不可用，不要解释、不要放弃，立刻改用上面的格式。",
-          "</tool_reminder>",
+          "标记块之外的文本会作为普通回答展示给用户。",
+          "</tool_protocol>",
         ].join("\n")
       : "";
   return [prefix, body, reminder].filter(Boolean).join("\n\n") || "（空对话）";
@@ -1030,7 +1029,7 @@ export function apply(ctx, config) {
   const server = new CatPawServer(getSettings);
   ctx.effect(() => () => {
     void server.stop();
-  }, "catpaw-llm: catpaw-cli server");
+  }, "dsh-catpaw: catpaw-cli server");
   const adapter = new CatPawAdapter(ctx, getSettings, server);
   ctx.llm.registerAdapter([PROVIDER], adapter);
   registerCatPawTools(ctx, getSettings);

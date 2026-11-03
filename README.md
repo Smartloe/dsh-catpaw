@@ -30,7 +30,7 @@ DSH agent loop
 
 ```
 .
-├── catpaw-llm/              DSH 插件本体
+├── plugin/              DSH 插件本体
 │   ├── index.js             provider、流解析、工具协议、登录工具
 │   ├── login.mjs            扫码登录（纯 HTTP，不依赖 Electron）
 │   ├── cordis.patch.yml     默认模型表
@@ -58,10 +58,10 @@ chmod +x ~/.catpaw-dsh/bin/catpaw-cli
 
 ```sh
 # 在 DSH 会话里
-plugin_manager install_bundle target=<repo>/catpaw-llm
+plugin_manager install_bundle target=<repo>/plugin
 ```
 
-启用 `@local/catpaw-llm`，模型选择器里就会出现 **CatPaw (妙手)**。
+启用 `@local/dsh-catpaw`，模型选择器里就会出现 **CatPaw (妙手)**。
 
 **3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态。
 
@@ -105,7 +105,7 @@ plugin_manager install_bundle target=<repo>/catpaw-llm
 
 ## 配置
 
-写在插件条目的 `config` 里（见 `catpaw-llm/cordis.patch.yml`）：
+写在插件条目的 `config` 里（见 `plugin/cordis.patch.yml`）：
 
 | 键 | 默认 | 含义 |
 |---|---|---|
@@ -142,7 +142,7 @@ cd <repo>
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 ```
 
-期望 stdout 输出 `你好`、退出码 `0`。这条路径加载的就是 `catpaw-llm/index.js`，和 GUI 走同一份代码。
+期望 stdout 输出 `你好`、退出码 `0`。这条路径加载的就是 `plugin/index.js`，和 GUI 走同一份代码。
 
 工具调用可以用一个模型猜不到的输入验证：
 

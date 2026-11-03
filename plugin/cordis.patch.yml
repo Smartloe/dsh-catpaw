@@ -1,6 +1,6 @@
 - insert:
-    - id: catpaw-llm
-      name: '@local/catpaw-llm'
+    - id: dsh-catpaw
+      name: '@local/dsh-catpaw'
       config:
         permissionMode: dontAsk
         systemPrompt: transcript

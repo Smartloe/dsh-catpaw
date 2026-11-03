@@ -4,17 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 这个仓库
 
-把妙手（CatPaw）桌面端的模型桥接进 DeepSeek Harness 的插件。仓库根是一个普通的 Node/ESM 项目布局，真正的插件在 `catpaw-llm/`，没有构建步骤，改完直接用。
+把妙手（CatPaw）桌面端的模型桥接进 DeepSeek Harness 的插件。仓库根是一个普通的 Node/ESM 项目布局，真正的插件在 `plugin/`，没有构建步骤，改完直接用。
 
 ```
-catpaw-llm/index.js        provider 注册、SSE 解析、工具协议、登录工具
-catpaw-llm/login.mjs       扫码登录（纯 HTTP）
-catpaw-llm/cordis.patch.yml 默认模型表
+plugin/index.js        provider 注册、SSE 解析、工具协议、登录工具
+plugin/login.mjs       扫码登录（纯 HTTP）
+plugin/cordis.patch.yml 默认模型表
 bin/catpaw-cli             妙手自带的 agent CLI（专有二进制）
 examples/                  无头冒烟测试 patch
 ```
 
-修改后先跑 `node --check catpaw-llm/index.js`，再用 `examples/headless-catpaw.yml` 做一次无头验证。
+修改后先跑 `node --check plugin/index.js`，再用 `examples/headless-catpaw.yml` 做一次无头验证。
 
 ## 妙手应用在哪
 

@@ -1,5 +1,5 @@
 {
-  "name": "@local/catpaw-llm",
+  "name": "@local/dsh-catpaw",
   "version": "1.0.0",
   "private": true,
   "description": "CatPaw (妙手) model bridge: adds the local CatPaw agent as a DeepSeek Harness LLM provider.",

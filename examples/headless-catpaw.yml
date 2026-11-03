@@ -4,8 +4,8 @@
     provider: catpaw
     model: "10002544"
 - insert:
-    - id: catpaw-llm
-      name: '../catpaw-llm/index.js'
+    - id: dsh-catpaw
+      name: '../plugin/index.js'
       config:
         permissionMode: dontAsk
         systemPrompt: transcript
