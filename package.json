@@ -16,7 +16,8 @@
     "icon.svg",
     "index.js",
     "locale/*.json",
-    "login.mjs"
+    "login.mjs",
+    "stream-text.mjs"
   ],
   "dsh": {
     "bundle": {
