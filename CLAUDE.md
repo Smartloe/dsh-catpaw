@@ -16,6 +16,7 @@ adapter.test.mjs        适配器端到端用例（用 fixtures/fake-cli.mjs 假
 defaults.test.mjs       文档里那张配置表的默认值守卫（改了默认值它会红）
 fixtures/fake-cli.mjs   测试用的假 CLI：按脚本发 SSE，不联网
 login.mjs               扫码登录（纯 HTTP）
+login.test.mjs          授权 URL 与凭据文件格式的用例
 cordis.patch.yml        默认模型表
 bin/catpaw-cli          妙手自带的 agent CLI（专有二进制）
 examples/               无头冒烟测试 patch
@@ -23,7 +24,7 @@ scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 scripts/verify-package.sh 只验打包（CI 跑这个，不需要 DSH）
 ```
 
-修改后先跑 `node --check index.js` 和 `node --test`（五个用例文件，80 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
+修改后先跑 `node --check index.js` 和 `node --test`（六个用例文件，84 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 
