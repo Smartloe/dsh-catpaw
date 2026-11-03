@@ -277,13 +277,18 @@ class CatPawServer {
     this.ready = null;
     this.token = null;
     this.signature = "";
-    // Calls currently streaming through this process. A config change must not
-    // kill one of them; it is applied between calls instead.
+    // Calls currently streaming through this process. A config change is only
+    // applied while it is zero, so a restart never cuts into another call.
     this.inflight = 0;
-    this.restartPending = false;
   }
 
-  begin() {
+  /**
+   * Take a slot for one streaming call. Must run while the count is still zero,
+   * otherwise the staleness check below can never fire: the very call that
+   * would apply a new credential would already be counted as in flight.
+   */
+  async acquire() {
+    if (this.inflight === 0) await this.refreshIfStale();
     this.inflight += 1;
   }
 
@@ -407,22 +412,13 @@ class CatPawServer {
     if (!auth || !this.token) return;
     const signature = launchSignature(settings, auth.token);
     if (signature === this.signature) return;
-    if (this.inflight > 0) {
-      debugLog(settings.debug, "launch config changed; restarting once the current calls finish");
-      this.restartPending = true;
-      return;
-    }
+    // Callers only reach this while nothing else is streaming (see `acquire`),
+    // so the restart cannot cut into another call's stream.
     debugLog(settings.debug, "catpaw-cli launch config changed, restarting server");
-    this.restartPending = false;
     await this.stop();
   }
 
   async request(method, params, { stream = false, signal } = {}) {
-    if (this.restartPending && this.inflight === 0) {
-      this.restartPending = false;
-      await this.stop();
-    }
-    await this.refreshIfStale();
     const base = await this.ensure();
     const body = { jsonrpc: "2.0", method, params, id: randomUUID() };
     if (stream) body.stream = true;
@@ -985,7 +981,7 @@ class CatPawAdapter {
     };
 
     let response;
-    this.server.begin();
+    await this.server.acquire();
     try {
       response = await this.server.request(
         "agent.start",

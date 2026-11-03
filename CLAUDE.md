@@ -26,7 +26,7 @@ scripts/verify-package.sh 只验打包（CI 跑这个，不需要 DSH）
 
 四层验证清单（单元 → 打包 → 安装 → GUI）见 `VERIFY.md`。
 
-修改后先跑 `node --check index.js` 和 `node --test`（六个用例文件，91 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
+修改后先跑 `node --check index.js` 和 `node --test`（六个用例文件，92 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 

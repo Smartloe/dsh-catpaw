@@ -396,3 +396,30 @@ test("a call the user stopped is recorded as stopped, not as a failure", async (
   const { report } = await doctor.execute({});
   assert.match(report, /上一次调用: .*stopped · \d+ms/);
 });
+
+test("a new credential restarts the CLI between calls, without a DSH restart", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx, { gateway: "http://127.0.0.1:9", baseURL: "http://127.0.0.1:9" });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+
+  await run(adapter);
+  const firstPid = JSON.parse(readFileSync(fx.logPath, "utf8").trim().split("\n")[0]).pid;
+
+  // a QR login rewrites auth.json under the running server
+  writeFileSync(
+    fx.authPath,
+    JSON.stringify({ auth: { accessToken: "fresh-token", loginType: "passport" }, account: { uid: "1" }, updatedAt: Date.now() }),
+  );
+
+  const chunks = await run(adapter);
+  assert.deepEqual(finishOf(chunks).reason, { kind: "stop" }, "the call after a login still works");
+
+  const starts = readFileSync(fx.logPath, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.event === "server-start");
+  assert.equal(starts.length, 2, "the CLI was restarted with the new credential");
+  assert.notEqual(starts[1].pid, firstPid);
+});

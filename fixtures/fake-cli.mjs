@@ -27,6 +27,9 @@ const currentScenario = () =>
 const scenario = currentScenario();
 const logPath = process.env.FAKE_CLI_LOG ?? "";
 
+// One line per process, so a test can tell a restart from a reused server.
+if (logPath) appendFileSync(logPath, `${JSON.stringify({ event: "server-start", pid: process.pid })}\n`);
+
 const corpus = {
   text: "先说明一下，这是一段用于测试的连续文本，会被拆成很多帧送出去。",
   tool: "我来看一下。",
