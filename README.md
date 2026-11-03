@@ -70,7 +70,7 @@ plugin_manager install_bundle target=<repo>
 
 启用 `dsh-catpaw`，模型选择器里就会出现 **CatPaw (妙手)**。
 
-**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态。
+**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态；说不清哪里不对时，让 agent 调 `catpaw_doctor`——它一次性报告：CLI 解析到哪份二进制、凭据是否还有效、网关是否可达、**线上模型表与配置是否一致**、本地服务是否在跑，以及当前生效的设置。
 
 ## 模型
 
@@ -172,6 +172,7 @@ dsh headless --patch ./examples/headless-catpaw.yml "用 bash 执行 cat /tmp/pr
 | 模型说"我将执行…"但什么都没做 | 它调了妙手自带工具、被拒后开始解释。1.1.0 起默认 `excludeNativeTools: true` 会把这些工具从模型手里拿走；若你手动改过这行，改回 `true` |
 | 报 `interaction_pending` | `permissionMode` 停在需要人工确认的模式。设成 `dontAsk` |
 | 报 401 / 403，或提示"登录态可能已失效" | token 过期。让 agent 调 `catpaw_login` 重新扫码 |
+| 说不清哪里不对 | 让 agent 调 `catpaw_doctor`，它会把 CLI 路径、凭据、网关、模型表一致性、本地服务与生效设置一次列出来 |
 | 报"找不到 catpaw-cli" | 用 `cliPath` 指到你那份二进制；仓库自带的是 macOS arm64 |
 | 一直转圈，最后超时 | 后端卡住或网络抖动。默认 5 分钟无内容帧就中止，并通知后端停止；可调 `idleTimeoutMs` / `timeoutMs` |
 | 长会话后模型忘了前面说过什么 | 单轮 prompt 有字符上限（`maxPromptChars`，默认 12 万），超出会丢最旧的消息，并在 prompt 里注明省略了多少条 |

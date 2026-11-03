@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { runLogin, validateToken, whoami } from "./login.mjs";
+import { fetchModelTypes, runLogin, validateToken, whoami } from "./login.mjs";
 import { DSML_CLOSE, DSML_OPEN, LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 const PROVIDER = "catpaw";
@@ -1178,10 +1178,23 @@ class CatPawAdapter {
 }
 
 /**
+ * Compare the configured catalogue with the one 妙手 currently offers, so a
+ * stale row config is a one-line answer instead of a support thread.
+ */
+export function catalogueDiff(configured, live) {
+  const want = new Set((Array.isArray(configured) ? configured : []).map((model) => String(model?.id ?? "")));
+  const have = new Set((Array.isArray(live) ? live : []).map((model) => String(model?.id ?? "")));
+  return {
+    missing: [...want].filter((id) => id.length > 0 && !have.has(id)),
+    added: [...have].filter((id) => id.length > 0 && !want.has(id)),
+  };
+}
+
+/**
  * Expose the QR login to the agent so a missing or expired credential can be
  * fixed without the 妙手 app and without restarting DSH.
  */
-function registerCatPawTools(ctx, getSettings) {
+function registerCatPawTools(ctx, getSettings, server) {
   const state = { pending: null };
   const LOGIN_TTL_MS = 270000;
 
@@ -1266,6 +1279,69 @@ function registerCatPawTools(ctx, getSettings) {
   });
 
   ctx.tools.register({
+    name: "catpaw_doctor",
+    description:
+      "One-shot health check for the CatPaw bridge: which catpaw-cli binary resolves, whether the credential file exists and the token is still accepted, whether the gateway answers, whether the configured model catalogue still matches 妙手's live one, whether the local server is running, and the effective settings. Use it when a call fails for an unclear reason.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    output: {
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: { report: { type: "string" } },
+      },
+      render: (_args, value) => [{ type: "text", text: value.report }],
+    },
+    async execute() {
+      const settings = getSettings();
+      const lines = [];
+      const step = async (label, probe) => {
+        try {
+          lines.push(`${label}: ${await probe()}`);
+        } catch (error) {
+          lines.push(`${label}: 失败 — ${error?.message ?? String(error)}`);
+        }
+      };
+
+      await step("catpaw-cli", async () => {
+        if (!settings.cliPath) return "未找到（用 cliPath / CATPAW_CLI 指定）";
+        return `${settings.cliPath}${existsSync(settings.cliPath) ? "" : "（文件不存在！）"}`;
+      });
+
+      const auth = readAuth(settings.authPath, { required: false });
+      await step("凭据", async () => {
+        if (!auth) return `未登录（${settings.authPath} 不存在或没有 accessToken）→ 运行 catpaw_login`;
+        const identity = await whoami(auth.token, { baseURL: settings.gateway }).catch(() => null);
+        const check = await validateToken(auth.token, { baseURL: settings.gateway });
+        return `${identity?.name || auth.account?.name || auth.account?.uid || "未知账号"} / token ${check.valid ? "有效" : `已失效（${check.message}）→ 运行 catpaw_login`}`;
+      });
+
+      await step("网关", async () => {
+        const started = Date.now();
+        await whoami(auth?.token ?? "", { baseURL: settings.gateway });
+        return `${settings.gateway} 可访问（${Date.now() - started}ms）`;
+      });
+
+      await step("模型表", async () => {
+        if (!auth) return "跳过（未登录）";
+        const live = await fetchModelTypes(auth.token, { baseURL: settings.baseURL });
+        const diff = catalogueDiff(settings.models, live);
+        const parts = [`配置 ${settings.models.length} 个 / 线上 ${live.length} 个`];
+        if (diff.added.length) parts.push(`线上新增: ${diff.added.join(", ")}（可加进 models）`);
+        if (diff.missing.length) parts.push(`配置里有但线上没有: ${diff.missing.join(", ")}`);
+        if (!diff.added.length && !diff.missing.length) parts.push("一致");
+        return parts.join("；");
+      });
+
+      await step("本地服务", async () => (server.url ? `${server.url}（已启动）` : "未启动（首次调用时自动拉起）"));
+
+      lines.push(
+        `配置: permissionMode=${settings.permissionMode}, excludeNativeTools=${settings.excludeNativeTools.length ? `${settings.excludeNativeTools.length} 个工具` : "关"}, systemPrompt=${settings.systemPrompt}, maxPromptChars=${settings.maxPromptChars}, idleTimeoutMs=${settings.idleTimeoutMs}`,
+      );
+      return { report: lines.join("\n") };
+    },
+  });
+
+  ctx.tools.register({
     name: "catpaw_auth_status",
     description:
       "Report the 妙手 (CatPaw) login state: whether the credential file exists, which account is signed in, and whether the gateway still accepts the token.",
@@ -1332,5 +1408,5 @@ export function apply(ctx, config) {
   }, "dsh-catpaw: catpaw-cli server");
   const adapter = new CatPawAdapter(ctx, getSettings, server);
   ctx.llm.registerAdapter([PROVIDER], adapter);
-  registerCatPawTools(ctx, getSettings);
+  registerCatPawTools(ctx, getSettings, server);
 }

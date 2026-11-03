@@ -19,7 +19,7 @@ examples/               无头冒烟测试 patch
 scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 ```
 
-修改后先跑 `node --check index.js` 和 `node --test`（三个用例文件，40 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
+修改后先跑 `node --check index.js` 和 `node --test`（三个用例文件，44 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 
@@ -45,6 +45,11 @@ scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 ## 模型表从哪来
 
 `POST /api/agent/maas/model-types`，body `{tenant:"CatDesk", scene:"CATX_APP", env:"EXTERNAL"}`，带 `Access-Token` / `x-passport-token`。返回 12 个模型，每项含 `modelTypeId`、`modelTypeName`、`parameterDefinitions`。模型表的 `params` 字段就是从 `parameterDefinitions` 的 `id` 抄下来的，改表时以该接口为准。
+
+## 工具
+
+- `catpaw_login` / `catpaw_auth_status`：扫码登录、查登录态
+- `catpaw_doctor`：一次拿到 CLI 路径、凭据、网关、**线上模型表与配置的差异**（`fetchModelTypes` + `catalogueDiff`）、本地服务、生效设置
 
 ## 登录
 

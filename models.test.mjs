@@ -91,3 +91,16 @@ test("an untagged error is permanent, never retried", () => {
   assert.equal(errorFinish(new Error("boom")).reason.failure.code, "CATPAW_ERROR");
   assert.equal(errorFinish(new Error("boom"), FAILURE_CODES.server).reason.failure.code, "SERVER");
 });
+
+test("catalogue drift reports both directions", async () => {
+  const { catalogueDiff } = await import("./index.js");
+  const configured = [{ id: "10002544" }, { id: "77" }, { id: "0" }];
+  const live = [{ id: "10002544" }, { id: "77" }, { id: "999" }];
+  assert.deepEqual(catalogueDiff(configured, live), { missing: ["0"], added: ["999"] });
+});
+
+test("an unchanged catalogue reports no drift", async () => {
+  const { catalogueDiff } = await import("./index.js");
+  const models = [{ id: "a" }, { id: "b" }];
+  assert.deepEqual(catalogueDiff(models, [{ id: "b" }, { id: "a" }]), { missing: [], added: [] });
+});

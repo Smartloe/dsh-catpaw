@@ -54,7 +54,7 @@ Resolution order: config `cliPath` → `CATPAW_CLI` → the copy in this reposit
 
 The bundled copy is a **macOS arm64** binary; on other platforms point `cliPath` at your own.
 
-**2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted.
+**2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted; when something is unclear, ask the agent for `catpaw_doctor` — one report covering the resolved CLI binary, the credential, the gateway, whether the configured catalogue still matches 妙手's live one, the local server, and the effective settings.
 
 Under the hood it is the same pure-HTTP flow the app uses — no Electron:
 
@@ -162,6 +162,7 @@ GUI: select **CatPaw 77**, send a message, and confirm the reply. The Plugins pa
 | The model says it will run something and then does nothing | It called one of CatPaw's own tools, was denied, and narrated that. Since 1.1.0 `excludeNativeTools` (default true) removes those tools from the model's list; put it back to `true` if you changed it |
 | `interaction_pending` | `permissionMode` is a mode that needs a human. Use `dontAsk` |
 | 401 / 403, or "the login may have expired" | The token expired. Ask the agent for `catpaw_login` |
+| Something is wrong but unclear | Ask the agent for `catpaw_doctor`: CLI path, credential, gateway, catalogue drift, local server, effective settings |
 | "找不到 catpaw-cli" | Point `cliPath` at your binary; the bundled one is macOS arm64 |
 | It spins and then times out | The backend stalled. Five minutes without a content frame aborts the turn and stops the backend run; tune `idleTimeoutMs` / `timeoutMs` |
 | Long sessions lose earlier context | The prompt has a character budget (`maxPromptChars`, 120k by default); the oldest messages are dropped and the prompt says how many |

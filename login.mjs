@@ -283,3 +283,40 @@ export async function runLogin({
     if (!controller.signal.aborted) controller.abort(new Error("登录已结束"));
   }
 }
+
+/**
+ * The catalogue 妙手 itself shows: the twelve real modelTypes and the
+ * parameters each one accepts. Used by `catpaw_doctor` to tell a user whose
+ * account gained or lost a model that their row config is stale.
+ */
+export async function fetchModelTypes(token, { baseURL = "https://ai.catpaw.meituan.com", signal } = {}) {
+  const timer = AbortSignal.timeout(12000);
+  const composite = signal ? AbortSignal.any([signal, timer]) : timer;
+  const response = await fetch(`${baseURL}/api/agent/maas/model-types`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "Access-Token": token,
+      "x-passport-token": token,
+    },
+    body: JSON.stringify({ tenant: "CatDesk", scene: "CATX_APP", env: "EXTERNAL" }),
+    signal: composite,
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`model-types HTTP ${response.status}: ${text.slice(0, 200)}`);
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error("model-types returned non-JSON");
+  }
+  const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.data?.modelTypes) ? payload.data.modelTypes : [];
+  return list
+    .map((item) => ({
+      id: String(item?.modelTypeId ?? item?.id ?? ""),
+      name: String(item?.modelTypeName ?? item?.name ?? ""),
+      params: (item?.parameterDefinitions ?? []).map((param) => String(param?.id ?? "")).filter(Boolean),
+    }))
+    .filter((model) => model.id.length > 0);
+}
