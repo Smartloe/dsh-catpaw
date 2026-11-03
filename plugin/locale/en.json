@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "CatPaw Model Bridge",
-    "description": "Adds the local CatPaw (妙手) agent as a selectable model provider in DeepSeek Harness, bridging model calls to the catpaw-cli JSON-RPC server."
-  }
-}

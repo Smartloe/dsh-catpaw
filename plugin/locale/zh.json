@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "妙手模型桥接",
-    "description": "把本机妙手（CatPaw）的模型接入 DeepSeek Harness，作为可选的模型提供方；模型请求通过本机 catpaw-cli 的 JSON-RPC 服务转发。"
-  }
-}
