@@ -345,3 +345,37 @@ test("the provider introduces itself the way the picker expects", async (t) => {
   assert.ok(policy.retryableCodes.includes("TIMEOUT"));
   assert.ok(!policy.retryableCodes.includes("CATPAW_ERROR"));
 });
+
+test("reasoning streams as its own block before the answer", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "reasoning";
+
+  const chunks = await run(adapter);
+  const starts = chunks.filter((chunk) => chunk.type === "block-start").map((chunk) => chunk.blockType);
+  assert.deepEqual(starts, ["reasoning", "text"], "reasoning comes first, then the answer");
+
+  const reasoning = chunks
+    .filter((chunk) => chunk.type === "reasoning-delta")
+    .map((chunk) => chunk.text)
+    .join("");
+  assert.equal(reasoning, "第一步，理解问题。第二步，给出结论。");
+
+  const blocks = chunks.filter((chunk) => chunk.type === "block-end").map((chunk) => chunk.block);
+  assert.deepEqual(blocks.map((block) => block.type), ["reasoning", "text"]);
+  assert.equal(blocks[0].text, reasoning);
+  assert.deepEqual(finishOf(chunks).reason, { kind: "stop" });
+});
+
+test("the answer is streamed in pieces, not held until the end", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+
+  const chunks = await run(adapter);
+  const deltas = chunks.filter((chunk) => chunk.type === "text-delta");
+  assert.ok(deltas.length > 3, `expected several deltas, got ${deltas.length}`);
+  assert.ok(deltas[0].text.length < textOf(chunks).length, "the first piece must be a piece");
+});
