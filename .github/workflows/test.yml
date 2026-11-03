@@ -19,3 +19,5 @@ jobs:
           node --check stream-text.mjs
       - name: Unit tests
         run: node --test
+      - name: Packaged form
+        run: ./scripts/verify-package.sh

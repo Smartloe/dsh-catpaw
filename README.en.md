@@ -159,6 +159,7 @@ dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好
 # throwaway DSH profile, compose it, answer one prompt, and confirm the vendored
 # catpaw-cli is the binary in use
 ./scripts/verify-bundle.sh          # --offline skips the model call
+./scripts/verify-package.sh         # the package alone: no DSH needed, runs in CI
 # stdout: 你好！有什么可以帮你的吗？
 ```
 
