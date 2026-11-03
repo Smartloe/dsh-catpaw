@@ -97,7 +97,7 @@ To make it the profile default, add this to `~/.dsh/profiles/desktop/cordis.patc
 3. The adapter parses that payload into real harness `tool-call` blocks, so **DeepSeek Harness** executes the tool and owns the approval decision — CatPaw never runs it.
 4. Results return as `tool_result` messages on the next turn.
 
-CatPaw's own 19 tools are excluded at CLI spawn (`excludeTools`, on by default via `excludeNativeTools`), so the marked block is the only way the model can act — that is what took tool-call success from roughly one run in three to 13 of 14. The contract is also restated after the transcript. A turn that emits no marker streams as ordinary text.
+CatPaw's own 19 tools are excluded at CLI spawn (`excludeTools`, on by default via `excludeNativeTools`), so the marked block is the only way the model can act — that is what took tool-call success from roughly one run in three to 13 of 14. The contract is also restated after the transcript. LongCat sometimes writes its own `<longcat_tool_call>` XML instead; that is parsed too (`parseLongcatCalls`), so either shape lands as a real tool call. A turn that emits no marker streams as ordinary text.
 
 ## Configuration
 

@@ -106,7 +106,7 @@ plugin_manager install_bundle target=<repo>
 3. 插件把这段解析成真实的 `tool-call` 块，**由 DSH 执行并掌管审批**，妙手不参与。
 4. 结果作为 `tool_result` 在下一轮回到模型。
 
-启动 catpaw-cli 时会把妙手自带的 19 个工具用 `excludeTools` 全部排除（`excludeNativeTools: true`，默认开），模型手里只剩标记块这一条路——这是工具调用成功率从约 1/3 提到 13/14 的关键。协议在 transcript 之后还会重申一次（recency）。
+启动 catpaw-cli 时会把妙手自带的 19 个工具用 `excludeTools` 全部排除（`excludeNativeTools: true`，默认开），模型手里只剩标记块这一条路——这是工具调用成功率从约 1/3 提到 13/14 的关键。协议在 transcript 之后还会重申一次（recency）。LongCat 在没工具可调时会把训练时的原生格式 `<longcat_tool_call>` 当正文吐出来，插件同样能解析（`parseLongcatCalls`），所以两种写法都能落地。
 
 ## 配置
 

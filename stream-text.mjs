@@ -15,11 +15,35 @@
  * (`的` arriving twice is legitimate; a whole-frame repeat is not).
  */
 
+/** The bridge's own tool-call block. */
 export const TOOL_CALL_OPEN = "<<<catpaw_tool_call>>>";
 export const TOOL_CALL_CLOSE = "<<<end_catpaw_tool_call>>>";
 
-/** Strategies for holding back a marker that can split across frames. */
-export const MARKER_HOLD = TOOL_CALL_OPEN.length - 1;
+/**
+ * LongCat answers with its own tool-call XML when it has no native tools to
+ * call — observed verbatim as:
+ *
+ *   <longcat_tool_call>bash
+ *   <longcat_arg_key>command</longcat_arg_key>
+ *   <longcat_arg_value>ls -la</longcat_arg_value>
+ *   </longcat_tool_call>
+ *
+ * It reaches us as ordinary text, so it is treated as a second marker: parsed
+ * into real calls instead of being shown to the user as markup.
+ */
+export const LONGCAT_OPEN = "<longcat_tool_call>";
+export const LONGCAT_CLOSE = "</longcat_tool_call>";
+
+/** Default marker set: our block plus LongCat's native one. */
+export const DEFAULT_MARKERS = [
+  { open: TOOL_CALL_OPEN, close: TOOL_CALL_CLOSE },
+  { open: LONGCAT_OPEN, close: LONGCAT_CLOSE },
+];
+
+/** Longest hold-back needed to stop a marker from splitting across frames. */
+const holdFor = (markers) => Math.max(...markers.map((marker) => marker.open.length)) - 1;
+
+export const MARKER_HOLD = holdFor(DEFAULT_MARKERS);
 
 /** One streamed channel (text or reasoning), delta- or snapshot-shaped. */
 export class TextChannel {
@@ -47,26 +71,23 @@ export class TextChannel {
     this.text = previous + part;
     return part;
   }
-
-  /** Replace the buffer wholesale (used for the authoritative `model_end` text). */
-  reset(text) {
-    if (typeof text !== "string") return;
-    this.text = text;
-  }
 }
 
 /**
- * Splits a channel into ordinary text and the tool-call payload.
+ * Splits a channel into ordinary text and a tool-call payload.
  *
  * Text is emitted as it arrives except for a short tail, so a marker split
- * across frames is never half-printed. Once the marker is seen, the rest of the
+ * across frames is never half-printed. Once a marker is seen, the rest of the
  * channel becomes payload and nothing more is emitted as text.
  */
 export class MarkerGate {
-  constructor(channel) {
+  constructor(channel, markers = DEFAULT_MARKERS) {
     this.channel = channel;
+    this.markers = markers;
+    this.hold = holdFor(markers);
     this.emitted = 0;
     this.mode = "text"; // "text" | "tool"
+    this.marker = null;
     this.markerIndex = -1;
   }
 
@@ -85,15 +106,24 @@ export class MarkerGate {
     // is still arriving starts after it. Scanning from `emitted` (rather than
     // from a fixed tail window) matters on the first frame, where a whole
     // marker block can arrive at offset 0 before anything was published.
-    const index = text.indexOf(TOOL_CALL_OPEN, this.emitted);
-    if (index >= 0) {
+    let index = -1;
+    let found = null;
+    for (const marker of this.markers) {
+      const at = text.indexOf(marker.open, this.emitted);
+      if (at >= 0 && (index < 0 || at < index)) {
+        index = at;
+        found = marker;
+      }
+    }
+    if (found) {
       const head = index > this.emitted ? text.slice(this.emitted, index) : "";
       this.emitted = Math.max(this.emitted, index);
       this.mode = "tool";
+      this.marker = found;
       this.markerIndex = index;
       return head;
     }
-    const safe = text.length - MARKER_HOLD;
+    const safe = text.length - this.hold;
     if (safe <= this.emitted) return "";
     const piece = text.slice(this.emitted, safe);
     this.emitted = safe;
@@ -108,15 +138,26 @@ export class MarkerGate {
     return rest;
   }
 
+  /** Everything after the opening marker, before any close-tag handling. */
+  remainder() {
+    if (this.mode !== "tool" || this.markerIndex < 0 || !this.marker) return "";
+    return this.channel.text.slice(this.markerIndex + this.marker.open.length);
+  }
+
   /** The characters after the opening marker, split at the closing marker. */
   payload() {
-    if (this.mode !== "tool" || this.markerIndex < 0) return { body: "", trailing: "" };
-    const rest = this.channel.text.slice(this.markerIndex + TOOL_CALL_OPEN.length);
-    const close = rest.indexOf(TOOL_CALL_CLOSE);
-    if (close < 0) return { body: rest, trailing: "" };
+    if (this.mode !== "tool" || this.markerIndex < 0 || !this.marker) {
+      return { body: "", trailing: "", open: null, close: null };
+    }
+    const { open, close } = this.marker;
+    const rest = this.channel.text.slice(this.markerIndex + open.length);
+    const end = rest.indexOf(close);
+    if (end < 0) return { body: rest, trailing: "", open, close };
     return {
-      body: rest.slice(0, close),
-      trailing: rest.slice(close + TOOL_CALL_CLOSE.length).trim(),
+      body: rest.slice(0, end),
+      trailing: rest.slice(end + close.length).trim(),
+      open,
+      close,
     };
   }
 }

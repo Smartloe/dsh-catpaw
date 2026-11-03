@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { runLogin, validateToken, whoami } from "./login.mjs";
-import { MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
+import { LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 const PROVIDER = "catpaw";
 const APP_CLI =
@@ -403,10 +403,15 @@ class CatPawServer {
   }
 }
 
-function clipText(text, max) {
+export function clipText(text, max) {
   if (typeof text !== "string") return "";
   if (max <= 0 || text.length <= max) return text;
-  return `${text.slice(0, max)}\n…（已截断，原文 ${text.length} 字符）`;
+  // Keep both ends: a file listing or a diff loses its point when only the head
+  // survives, and the tail is usually where the answer is.
+  const tail = Math.min(800, Math.floor(max * 0.3));
+  const note = (dropped) => `\n…（中间省略 ${dropped} 字符，原文 ${text.length} 字符）…\n`;
+  const head = Math.max(0, max - tail - note(text.length).length);
+  return text.slice(0, head) + note(text.length - head - tail) + text.slice(-tail);
 }
 
 /**
@@ -453,7 +458,10 @@ export function renderToolSection(tools) {
     '数组元素形如 {"name":"工具名","arguments":{...}}，arguments 需符合该工具的参数 schema。',
     "一次可以列出多个调用，按执行顺序排列；结果会作为工具结果返回，然后继续。",
     "不需要工具时直接回答，不要输出标记块。",
+    "决定使用工具时，就在同一条回复里直接输出标记块；不要只说“我来调用”“我将读取”这类计划。",
+    "工具结果的 <tool_result error=\"true\"> 表示参数错了或执行失败：直接改正参数重试，不要反问用户要不要重试。",
     "",
+    "一次要做多件事时，把多个对象放进同一个数组，一条消息给全。",
     "示例（要执行 ls 时，输出且只输出这一块）：",
     TOOL_CALL_OPEN,
     `[{"name":"${exampleName}","arguments":${exampleArgs}}]`,
@@ -469,6 +477,35 @@ export function renderToolSection(tools) {
   }
   lines.push("</tools>");
   return lines.join("\n");
+}
+
+/**
+ * LongCat writes its own tool-call XML when it has no native tool to call:
+ *
+ *   <longcat_tool_call>bash
+ *   <longcat_arg_key>command</longcat_arg_key>
+ *   <longcat_arg_value>ls -la</longcat_arg_value>
+ *   </longcat_tool_call>
+ *
+ * One message can carry several blocks. Parsed rather than shown to the user.
+ */
+export function parseLongcatCalls(text, aliases = new Map()) {
+  const calls = [];
+  const blocks = String(text ?? "").match(/<longcat_tool_call>([\s\S]*?)<\/longcat_tool_call>/g) ?? [];
+  for (const block of blocks) {
+    const inner = block.slice(LONGCAT_OPEN.length, block.length - LONGCAT_CLOSE.length);
+    const named = inner.match(/<longcat_tool_name>([\s\S]*?)<\/longcat_tool_name>/);
+    let name = (named ? named[1] : (inner.match(/^\s*([A-Za-z0-9_.:$-]+)/)?.[1] ?? "")).trim();
+    if (name.length === 0) continue;
+    const args = {};
+    const pairs = inner.matchAll(
+      /<longcat_arg_key>([\s\S]*?)<\/longcat_arg_key>\s*<longcat_arg_value>([\s\S]*?)<\/longcat_arg_value>/g,
+    );
+    for (const pair of pairs) args[pair[1].trim()] = pair[2].trim();
+    if (name.startsWith(TOOL_ALIAS_PREFIX) && aliases.has(name)) name = aliases.get(name);
+    calls.push({ name, arguments: args });
+  }
+  return calls;
 }
 
 /** Pull `{name, arguments}` entries out of whatever the model wrapped them in. */
@@ -582,13 +619,21 @@ function renderPrompt(options, settings) {
   }
   let used = prefix ? prefix.length + 2 : 0;
   const kept = [];
+  let dropped = 0;
   for (let index = rendered.length - 1; index >= 0; index -= 1) {
     const piece = rendered[index];
-    if (kept.length > 0 && used + piece.length + 2 > budget) break;
+    if (kept.length > 0 && used + piece.length + 2 > budget) {
+      dropped = index + 1;
+      break;
+    }
     kept.unshift(piece);
     used += piece.length + 2;
   }
   let body = kept.join("\n\n");
+  // Say so rather than letting the model believe the conversation started here.
+  if (dropped > 0) {
+    body = `<omitted messages="${dropped}">更早的 ${dropped} 条消息因长度上限被省略。</omitted>\n\n${body}`;
+  }
   if (prefix.length + body.length > budget) {
     body = clipText(body, Math.max(0, budget - prefix.length - 2));
   }
@@ -861,7 +906,9 @@ class CatPawAdapter {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        touch();
+        // Deliberately not `touch()` here: the CLI emits keep-alive frames while
+        // the backend is stalled, and counting those as progress is how a hung
+        // run sits for the whole 10-minute budget instead of the idle timeout.
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
@@ -888,6 +935,10 @@ class CatPawAdapter {
             conversationId = data.conversationId;
           }
           const type = event?.type;
+          if (type === "model_chunk" || type === "model_end" || type === "turn_end" || type === "agent_end" ||
+              type === "agent_error" || type === "interaction_pending") {
+            touch();
+          }
           if (!type) {
             const result = frame?.result;
             if (result && result.status === "error") {
@@ -964,7 +1015,16 @@ class CatPawAdapter {
 
     let toolCalls = [];
     const payload = gate.payload();
-    if (gate.mode === "tool") {
+    if (gate.mode === "tool" && payload.open === LONGCAT_OPEN) {
+      // LongCat's own format: several blocks may follow the first, so the parser
+      // sees everything after the opening tag rather than one block.
+      const remainder = LONGCAT_OPEN + gate.remainder();
+      toolCalls = parseLongcatCalls(remainder, aliases);
+      if (toolCalls.length === 0) {
+        const fallback = remainder.replace(/<\/?longcat_[^>]*>/g, "").trim();
+        if (fallback) yield* publish("text", fallback);
+      }
+    } else if (gate.mode === "tool") {
       toolCalls = parseToolCalls(payload.body, aliases);
       if (toolCalls.length === 0) {
         const fallback = payload.body.trim();

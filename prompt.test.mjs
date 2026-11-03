@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseToolCalls, renderToolSection } from "./index.js";
+import { clipText, parseLongcatCalls, parseToolCalls, renderToolSection } from "./index.js";
 
 const aliases = new Map([
   ["dsh_bash", "bash"],
@@ -59,4 +59,46 @@ test("a truncated payload yields whatever complete calls it can", () => {
 test("garbage yields no calls instead of throwing", () => {
   assert.deepEqual(parseToolCalls("我做不到。", aliases), []);
   assert.deepEqual(parseToolCalls("", aliases), []);
+});
+
+test("long tool output keeps both ends and stays inside the limit", () => {
+  const text = `${"头".repeat(3000)}${"中".repeat(3000)}${"尾".repeat(3000)}`;
+  const clipped = clipText(text, 4000);
+  assert.ok(clipped.length <= 4000, `got ${clipped.length}`);
+  assert.ok(clipped.startsWith("头头头"));
+  assert.ok(clipped.endsWith("尾尾尾"));
+  assert.match(clipped, /中间省略 \d+ 字符/);
+});
+
+test("short text passes through untouched", () => {
+  assert.equal(clipText("abc", 10), "abc");
+  assert.equal(clipText("abc", 0), "abc");
+  assert.equal(clipText(undefined, 10), "");
+});
+
+test("LongCat's XML calls parse, including several blocks and aliases", () => {
+  const text = [
+    "<longcat_tool_call>bash",
+    "<longcat_arg_key>command</longcat_arg_key>",
+    "<longcat_arg_value>cat /tmp/a.txt</longcat_arg_value>",
+    "</longcat_tool_call>",
+    "<longcat_tool_call>dsh_read",
+    "<longcat_arg_key>file_path</longcat_arg_key>",
+    "<longcat_arg_value>/tmp/b.txt</longcat_arg_value>",
+    "</longcat_tool_call>",
+  ].join("\n");
+  assert.deepEqual(parseLongcatCalls(text, new Map([["dsh_read", "read"]])), [
+    { name: "bash", arguments: { command: "cat /tmp/a.txt" } },
+    { name: "read", arguments: { file_path: "/tmp/b.txt" } },
+  ]);
+});
+
+test("a named-tool variant and a nameless block are handled", () => {
+  const text = [
+    "<longcat_tool_call><longcat_tool_name>bash</longcat_tool_name>",
+    "<longcat_arg_key>command</longcat_arg_key><longcat_arg_value>ls</longcat_arg_value>",
+    "</longcat_tool_call>",
+    "<longcat_tool_call></longcat_tool_call>",
+  ].join("\n");
+  assert.deepEqual(parseLongcatCalls(text), [{ name: "bash", arguments: { command: "ls" } }]);
 });
