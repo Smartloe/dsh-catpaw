@@ -18,7 +18,7 @@
  * signed-in account's CatPaw quota.
  */
 import { spawn } from "node:child_process";
-import { accessSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
+import { accessSync, chmodSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -322,6 +322,24 @@ class CatPawServer {
       // Leave the model with exactly one way to act: the marked tool block.
       ...(settings.excludeNativeTools.length > 0 ? { excludeTools: settings.excludeNativeTools } : {}),
     };
+    try {
+      return await this.spawnServer(settings, config);
+    } catch (error) {
+      // A checkout or a tarball can lose the executable bit, and some installers
+      // do not restore it. The file is ours to fix, so fix it and try once more
+      // instead of failing the first call a user ever makes.
+      if (error?.code !== "EACCES") throw error;
+      try {
+        chmodSync(settings.cliPath, 0o755);
+      } catch {
+        throw error;
+      }
+      debugLog(settings.debug, "chmod +x applied to", settings.cliPath);
+      return await this.spawnServer(settings, config);
+    }
+  }
+
+  async spawnServer(settings, config) {
     debugLog(settings.debug, "starting", settings.cliPath);
     const proc = spawn(settings.cliPath, ["server", "--host", "127.0.0.1"], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -362,7 +380,9 @@ class CatPawServer {
       proc.on("error", (error) => {
         fail(
           error?.code === "EACCES"
-            ? new Error(`catpaw-cli 没有执行权限：${settings.cliPath}（运行 chmod +x 修好）`)
+            ? Object.assign(new Error(`catpaw-cli 没有执行权限：${settings.cliPath}（运行 chmod +x 修好）`), {
+                code: "EACCES",
+              })
             : error,
         );
       });

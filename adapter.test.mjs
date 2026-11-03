@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -189,19 +189,19 @@ test("a completed run still stops cleanly", async (t) => {
   assert.deepEqual(finishOf(chunks).reason, { kind: "stop" });
 });
 
-test("a binary without the executable bit explains itself", async (t) => {
+test("a binary that lost its executable bit is repaired, not rejected", async (t) => {
   const fx = fixtures();
   const copy = join(fx.dir, "catpaw-cli");
   writeFileSync(copy, readFileSync(FAKE_CLI), { mode: 0o644 });
+  chmodSync(copy, 0o644);
   const { adapter, dispose } = mount(fx, { cliPath: copy });
   t.after(dispose);
   process.env.FAKE_SCENARIO = "text";
-  const chunks = await run(adapter);
 
-  const finish = finishOf(chunks);
-  assert.equal(finish.reason.kind, "error");
-  assert.match(finish.reason.failure.message, /执行权限/);
-  assert.equal(finish.reason.failure.code, "TRANSPORT");
+  const chunks = await run(adapter);
+  assert.deepEqual(finishOf(chunks).reason, { kind: "stop" });
+  // the plugin owns that file, so it fixes the bit instead of failing the call
+  assert.ok((statSync(copy).mode & 0o111) !== 0, "the binary should be executable afterwards");
 });
 
 test("the last call is remembered for the doctor", async (t) => {

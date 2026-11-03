@@ -23,5 +23,8 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "bin": {
+    "catpaw-cli": "./bin/catpaw-cli"
   }
 }

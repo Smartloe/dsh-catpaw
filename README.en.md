@@ -174,7 +174,7 @@ GUI: select **CatPaw 77**, send a message, and confirm the reply. The Plugins pa
 | `interaction_pending` | `permissionMode` is a mode that needs a human. Use `dontAsk` |
 | 401 / 403, or "the login may have expired" | The token expired. Ask the agent for `catpaw_login` |
 | Something is wrong but unclear | Ask the agent for `catpaw_doctor`: CLI path, credential, gateway, catalogue drift, local server, effective settings |
-| "catpaw-cli 没有执行权限" | The binary lost its executable bit. `chmod +x` it; `catpaw_doctor` names this too |
+| "catpaw-cli 没有执行权限" | The binary lost its executable bit. The plugin chmods it and retries once; if it still fails, `chmod +x` it yourself |
 | "找不到 catpaw-cli" | Point `cliPath` at your binary; the bundled one is macOS arm64 |
 | It spins and then times out | The backend stalled. Five minutes without a content frame aborts the turn and stops the backend run; tune `idleTimeoutMs` / `timeoutMs` |
 | Long sessions lose earlier context | The prompt has a character budget (`maxPromptChars`, 120k by default); the oldest messages are dropped and the prompt says how many |

@@ -184,7 +184,7 @@ dsh headless --patch ./examples/headless-catpaw.yml "用 bash 执行 cat /tmp/pr
 | 报 `interaction_pending` | `permissionMode` 停在需要人工确认的模式。设成 `dontAsk` |
 | 报 401 / 403，或提示"登录态可能已失效" | token 过期。让 agent 调 `catpaw_login` 重新扫码 |
 | 说不清哪里不对 | 让 agent 调 `catpaw_doctor`，它会把 CLI 路径、凭据、网关、模型表一致性、本地服务与生效设置一次列出来 |
-| 报"catpaw-cli 没有执行权限" | 二进制丢了 +x。`chmod +x` 那份文件；`catpaw_doctor` 也会点名这个 |
+| 报"catpaw-cli 没有执行权限" | 二进制丢了 +x。插件会自己 `chmod +x` 并重试一次；仍失败再手动 `chmod +x` 那份文件 |
 | 报"找不到 catpaw-cli" | 用 `cliPath` 指到你那份二进制；仓库自带的是 macOS arm64 |
 | 一直转圈，最后超时 | 后端卡住或网络抖动。默认 5 分钟无内容帧就中止，并通知后端停止；可调 `idleTimeoutMs` / `timeoutMs` |
 | 长会话后模型忘了前面说过什么 | 单轮 prompt 有字符上限（`maxPromptChars`，默认 12 万），超出会丢最旧的消息，并在 prompt 里注明省略了多少条 |
