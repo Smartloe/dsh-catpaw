@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clipText, parseDsmlCalls, parseLongcatCalls, parseToolCalls, renderToolSection } from "./index.js";
+import { clipText, parseDsmlCalls, parseLongcatCalls, parseToolCalls, renderPrompt, renderToolSection } from "./index.js";
 
 const aliases = new Map([
   ["dsh_bash", "bash"],
@@ -119,4 +119,49 @@ test("DeepSeek's DSML markup parses, with aliases and several parameters", () =>
 
 test("DSML without a closing tag yields nothing instead of throwing", () => {
   assert.deepEqual(parseDsmlCalls("<\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke name=\"dsh_bash\">"), []);
+});
+
+const TOOL = {
+  name: "bash",
+  description: "Run a command.",
+  parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+};
+const settingsFor = (maxPromptChars) => ({
+  messageChars: 20000,
+  toolResultChars: 4000,
+  maxPromptChars,
+  systemPrompt: "transcript",
+});
+const many = (count) =>
+  Array.from({ length: count }, (_, i) => ({ role: "user", content: [{ type: "text", text: `第 ${i} 条：${"内容".repeat(60)}` }] }));
+
+test("the prompt stays inside its budget even when it is tiny", () => {
+  const prompt = renderPrompt(
+    { system: "系统提示".repeat(2000), tools: [TOOL], messages: many(30) },
+    settingsFor(3000),
+  );
+  assert.ok(prompt.length <= 3000, `prompt was ${prompt.length}`);
+});
+
+test("dropping history is announced instead of hidden", () => {
+  const prompt = renderPrompt({ tools: [TOOL], messages: many(40) }, settingsFor(4000));
+  assert.match(prompt, /<omitted messages="\d+">/);
+});
+
+test("a transcript that fits is left alone", () => {
+  const messages = many(2);
+  const prompt = renderPrompt({ tools: [TOOL], messages }, settingsFor(120000));
+  assert.doesNotMatch(prompt, /omitted messages/);
+  assert.match(prompt, /第 0 条/);
+  assert.match(prompt, /第 1 条/);
+});
+
+test("the tool protocol is restated even when the budget is tight", () => {
+  const prompt = renderPrompt({ tools: [TOOL], messages: many(30) }, settingsFor(2500));
+  assert.match(prompt, /<tool_protocol>/);
+  assert.match(prompt, /dsh_bash/);
+});
+
+test("an empty conversation still renders something usable", () => {
+  assert.equal(renderPrompt({ messages: [] }, settingsFor(120000)), "（空对话）");
 });

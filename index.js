@@ -682,44 +682,14 @@ function renderMessage(message, limits) {
   return `<${message.role}>\n${clipText(content, limits.messageChars)}\n</${message.role}>`;
 }
 
-function renderPrompt(options, settings) {
+export function renderPrompt(options, settings) {
   const limits = { messageChars: settings.messageChars, toolResultChars: settings.toolResultChars };
-  const system =
-    options.system && settings.systemPrompt === "transcript"
-      ? `<system>\n${clipText(String(options.system).trim(), Math.min(settings.messageChars, 40000))}\n</system>`
-      : "";
-  const tools = Array.isArray(options.tools) ? options.tools.filter((tool) => tool && typeof tool.name === "string") : [];
   const budget = Math.max(2000, settings.maxPromptChars);
-  const toolSection =
-    tools.length > 0 ? clipText(renderToolSection(tools), Math.floor(budget * 0.55)) : "";
-  const prefix = [system, toolSection].filter(Boolean).join("\n\n");
-  const rendered = [];
-  for (const message of options.messages ?? []) {
-    const piece = renderMessage(message, limits);
-    if (piece) rendered.push(piece);
-  }
-  let used = prefix ? prefix.length + 2 : 0;
-  const kept = [];
-  let dropped = 0;
-  for (let index = rendered.length - 1; index >= 0; index -= 1) {
-    const piece = rendered[index];
-    if (kept.length > 0 && used + piece.length + 2 > budget) {
-      dropped = index + 1;
-      break;
-    }
-    kept.unshift(piece);
-    used += piece.length + 2;
-  }
-  let body = kept.join("\n\n");
-  // Say so rather than letting the model believe the conversation started here.
-  if (dropped > 0) {
-    body = `<omitted messages="${dropped}">更早的 ${dropped} 条消息因长度上限被省略。</omitted>\n\n${body}`;
-  }
-  if (prefix.length + body.length > budget) {
-    body = clipText(body, Math.max(0, budget - prefix.length - 2));
-  }
+  const tools = Array.isArray(options.tools) ? options.tools.filter((tool) => tool && typeof tool.name === "string") : [];
+
   // Recency matters: restate the contract after the transcript so the model
   // does not fall back to its own built-in tools when the task needs action.
+  // It is built first because it has to be paid for out of the same budget.
   const reminder =
     tools.length > 0
       ? [
@@ -735,6 +705,47 @@ function renderPrompt(options, settings) {
           "</tool_protocol>",
         ].join("\n")
       : "";
+  const reserved = reminder ? reminder.length + 2 : 0;
+  const available = Math.max(0, budget - reserved);
+
+  // Every part is a share of what is left for it, so a small budget cannot be
+  // blown by a long system prompt or a large tool catalogue.
+  const system =
+    options.system && settings.systemPrompt === "transcript"
+      ? `<system>\n${clipText(String(options.system).trim(), Math.min(settings.messageChars, 40000, Math.floor(available * 0.35)))}</system>`
+      : "";
+  const toolSection =
+    tools.length > 0 ? clipText(renderToolSection(tools), Math.max(600, Math.floor(available * 0.45))) : "";
+  const prefix = [system, toolSection].filter(Boolean).join("\n\n");
+
+  const rendered = [];
+  for (const message of options.messages ?? []) {
+    const piece = renderMessage(message, limits);
+    if (piece) rendered.push(piece);
+  }
+  let used = prefix ? prefix.length + 2 : 0;
+  const kept = [];
+  let dropped = 0;
+  for (let index = rendered.length - 1; index >= 0; index -= 1) {
+    const piece = rendered[index];
+    if (kept.length > 0 && used + piece.length + 2 > available) {
+      dropped = index + 1;
+      break;
+    }
+    kept.unshift(piece);
+    used += piece.length + 2;
+  }
+  let body = kept.join("\n\n");
+  // Say so rather than letting the model believe the conversation started here.
+  if (dropped > 0) {
+    body = `<omitted messages="${dropped}">更早的 ${dropped} 条消息因长度上限被省略。</omitted>\n\n${body}`;
+  }
+  if (prefix.length + body.length > available) {
+    const room = available - prefix.length - 2;
+    // `clipText(text, 0)` returns the text untouched, which is the opposite of
+    // what a budget is for: drop it instead of exceeding the limit.
+    body = room > 80 ? clipText(body, room) : "";
+  }
   return [prefix, body, reminder].filter(Boolean).join("\n\n") || "（空对话）";
 }
 
