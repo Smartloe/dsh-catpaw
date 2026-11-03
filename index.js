@@ -18,7 +18,7 @@
  * signed-in account's CatPaw quota.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -132,6 +132,9 @@ export function modelParamsFor(entry, effort) {
  * them leaves the model with no tool but ours. Measured 2026-11-04 on
  * catpaw-cli 1.2.0-beta.45.
  */
+/** `agent_end` reasons that mean "the run finished normally". */
+const AGENT_END_OK = new Set(["completed", "end_turn", "stop"]);
+
 const NATIVE_TOOLS = [
   "bash",
   "read_file",
@@ -344,7 +347,13 @@ class CatPawServer {
       };
       proc.stdout.on("data", onData);
       proc.stderr.on("data", (buf) => debugLog(settings.debug, String(buf).trim()));
-      proc.on("error", fail);
+      proc.on("error", (error) => {
+        fail(
+          error?.code === "EACCES"
+            ? new Error(`catpaw-cli 没有执行权限：${settings.cliPath}（运行 chmod +x 修好）`)
+            : error,
+        );
+      });
       proc.on("exit", (code, signal) => {
         this.url = null;
         this.proc = null;
@@ -720,6 +729,8 @@ export const FAILURE_CODES = {
   permanent: "CATPAW_ERROR",
 };
 
+const KNOWN_FAILURE_CODES = new Set(Object.values(FAILURE_CODES));
+
 export function errorFinish(error, code = FAILURE_CODES.permanent) {
   return {
     type: "finish",
@@ -727,7 +738,9 @@ export function errorFinish(error, code = FAILURE_CODES.permanent) {
       kind: "error",
       failure: {
         message: error?.message ? String(error.message) : String(error),
-        code: error?.code && typeof error.code === "string" ? error.code : code,
+        // Node errors carry their own `code` (EACCES, ECONNREFUSED); only a
+        // value the retry policy knows about may override the caller's code.
+        code: typeof error?.code === "string" && KNOWN_FAILURE_CODES.has(error.code) ? error.code : code,
       },
     },
   };
@@ -1179,6 +1192,15 @@ class CatPawAdapter {
       );
       return;
     }
+    // `agent_end` can also mean the run died: an agent error, a terminated
+    // session, or the turn budget. Reporting that as a normal stop handed the
+    // harness half an answer with no indication anything went wrong.
+    if (sawAgentEnd && !AGENT_END_OK.has(agentEndReason)) {
+      yield errorFinish(
+        new Error(`CatPaw 提前结束（${agentEndReason}）${shown.text || shown.reasoning ? "，回答可能不完整" : ""}`),
+      );
+      return;
+    }
     if (!shown.text && !shown.reasoning && toolCalls.length === 0) {
       yield errorFinish(new Error("CatPaw 没有返回任何内容"), FAILURE_CODES.empty);
       return;
@@ -1314,7 +1336,13 @@ function registerCatPawTools(ctx, getSettings, server) {
 
       await step("catpaw-cli", async () => {
         if (!settings.cliPath) return "未找到（用 cliPath / CATPAW_CLI 指定）";
-        return `${settings.cliPath}${existsSync(settings.cliPath) ? "" : "（文件不存在！）"}`;
+        if (!existsSync(settings.cliPath)) return `${settings.cliPath}（文件不存在！）`;
+        try {
+          accessSync(settings.cliPath, fsConstants.X_OK);
+        } catch {
+          return `${settings.cliPath}（存在但没有执行权限，运行 chmod +x 修好）`;
+        }
+        return settings.cliPath;
       });
 
       const auth = readAuth(settings.authPath, { required: false });

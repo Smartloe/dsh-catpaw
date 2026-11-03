@@ -61,7 +61,13 @@ function frames(answer) {
   }
   out.push({ type: "model_end", data: { message: { content: [{ type: "text", text: scenario === "tool" ? "" : answer }] } } });
   out.push({ type: "turn_end", data: { turn: 1, conversationId: "fake-conversation" } });
-  out.push({ type: "agent_end", data: { reason: "completed", conversationId: "fake-conversation" } });
+  out.push({
+    type: "agent_end",
+    data: {
+      reason: process.env.FAKE_END_REASON ?? "completed",
+      conversationId: "fake-conversation",
+    },
+  });
   return out;
 }
 

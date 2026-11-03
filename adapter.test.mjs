@@ -163,3 +163,43 @@ test("tools are registered under the names the documentation promises", async (t
   const names = tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, ["catpaw_auth_status", "catpaw_doctor", "catpaw_login"]);
 });
+
+test("a run that ends badly is not reported as a normal stop", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+  process.env.FAKE_END_REASON = "error";
+  t.after(() => delete process.env.FAKE_END_REASON);
+  const chunks = await run(adapter);
+
+  const finish = finishOf(chunks);
+  assert.equal(finish.reason.kind, "error");
+  assert.match(finish.reason.failure.message, /提前结束/);
+  assert.match(finish.reason.failure.message, /error/);
+});
+
+test("a completed run still stops cleanly", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+  delete process.env.FAKE_END_REASON;
+  const chunks = await run(adapter);
+  assert.deepEqual(finishOf(chunks).reason, { kind: "stop" });
+});
+
+test("a binary without the executable bit explains itself", async (t) => {
+  const fx = fixtures();
+  const copy = join(fx.dir, "catpaw-cli");
+  writeFileSync(copy, readFileSync(FAKE_CLI), { mode: 0o644 });
+  const { adapter, dispose } = mount(fx, { cliPath: copy });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+  const chunks = await run(adapter);
+
+  const finish = finishOf(chunks);
+  assert.equal(finish.reason.kind, "error");
+  assert.match(finish.reason.failure.message, /执行权限/);
+  assert.equal(finish.reason.failure.code, "TRANSPORT");
+});
