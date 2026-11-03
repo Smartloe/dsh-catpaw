@@ -155,7 +155,7 @@ write ~/.meituan-catpaw/auth.json
 
 ## 验证
 
-四层验证清单（单元 → 打包 → 安装 → GUI）见 [VERIFY.md](VERIFY.md)。
+四层验证清单（单元 → 打包 → 安装 → GUI）见 [VERIFY.md](VERIFY.md)；版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
 cd <repo>

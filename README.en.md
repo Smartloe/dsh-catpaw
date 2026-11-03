@@ -148,7 +148,7 @@ Each catalogue entry declares which backend parameters it supports (`params`). T
 
 ## Verify
 
-Four layers — unit, package, installed, GUI — are listed in [VERIFY.md](VERIFY.md).
+Four layers — unit, package, installed, GUI — are listed in [VERIFY.md](VERIFY.md); what changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
 
 Headless (a real DSH host, no GUI):
