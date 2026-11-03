@@ -12,7 +12,7 @@
 node --test
 ```
 
-覆盖 89 条，六个文件，全部离线：
+覆盖 90 条，六个文件，全部离线：
 
 | 文件 | 守住什么 |
 |---|---|
@@ -89,6 +89,22 @@ loaded: N exports, 12 models
 | 5 | 发一个长任务，点停止 | 立刻停住；后端也被 `agent.stop`（不再空烧额度） |
 | 6 | 让 agent「扫码登录妙手」（token 过期时） | 返回授权链接，扫码后自动生效，无需重启 |
 
+### 第 4 层没通过时查什么
+
+| 现象 | 先看这里 |
+|---|---|
+| 选择器里**没有** CatPaw (妙手) | profile 的 `package.json` → `dsh.profile.bundles` 是否含 `dsh-catpaw`；`node_modules/dsh-catpaw` 是不是有效软链（`ls -l` 应指向仓库） |
+| 有 CatPaw，但**一个模型都没有** | 行配置里是否写了 `models: []`；删掉该键走内置目录，或让 `catpaw_doctor` 看「模型表: 配置 0 个」 |
+| 选中模型后报「找不到 catpaw-cli」 | `catpaw_doctor` 第一行给出的路径；用 `cliPath` 或 `CATPAW_CLI` 指过去 |
+| 报「没有执行权限」 | 插件会自动 `chmod +x` 并重试一次；仍失败说明文件属主不同，手动 `chmod +x` |
+| 正文能出，但**没有 reasoning 块** | 档位是否选了「高」；LongCat 只有 Off/高，Auto 没有档位 |
+| 模型说「我将执行…」但**没有工具卡** | `catpaw_doctor` 的「上一次调用」应为 `tool-calls`；若不是，说明模型没遵守协议——重发一次；再不行确认行配置里 `excludeNativeTools` 没被改成 `false` |
+| 工具卡出现但**一直转圈** | `permissionMode` 是否为 `dontAsk`；出现 `interaction_pending` 说明停在了需要人工确认的模式 |
+| 点**停止**没反应 | 确认加载的是 1.4.0+；停止后 `catpaw_doctor` 的「上一次调用」应显示 `stopped — 用户中止`（不是 `error`） |
+| **首字延迟**明显（半秒空白） | 1.4.0 起已改为按需保留标记前缀；若仍明显，确认 profile 的软链指向的是本仓库而不是旧的拷贝 |
+
+上报问题时只要贴 `catpaw_doctor` 的输出即可——六行里已经包含路径、凭据、网关、模型表、服务状态与上一次调用的结局。
+
 ---
 
 ## 出问题时
@@ -101,7 +117,7 @@ catpaw-cli: <解析到的二进制，或「文件不存在 / 没有执行权限�
 网关: <地址> 可访问（<延迟>ms）| 失败 — <原因>
 模型表: 配置 N 个 / 线上 M 个；线上新增: … / 一致
 本地服务: http://127.0.0.1:<port>（已启动）| 未启动
-上一次调用: <时间> · 模型 <id> · stop|tool-calls|error · <耗时>ms — <细节>
+上一次调用: <时间> · 模型 <id> · stop|tool-calls|stopped|timeout|error · <耗时>ms — <细节>
 ```
 
 对照 `README.md` 的「常见问题」表处理。如果报告本身就跑不出来，说明插件没加载：检查 profile 的 `cordis.yml` 里是否还有 `- id: dsh-catpaw`。

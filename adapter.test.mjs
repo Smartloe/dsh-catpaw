@@ -232,7 +232,7 @@ test("a failed call leaves the failure in the doctor's report too", async (t) =>
 
   const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
   const { report } = await doctor.execute({});
-  assert.match(report, /上一次调用: .*error · \d+ms — CatPaw 响应空闲超时/);
+  assert.match(report, /上一次调用: .*timeout · \d+ms — CatPaw 响应空闲超时/);
 });
 
 test("a run stopped for a permission prompt says what to change", async (t) => {
@@ -378,4 +378,21 @@ test("the answer is streamed in pieces, not held until the end", async (t) => {
   const deltas = chunks.filter((chunk) => chunk.type === "text-delta");
   assert.ok(deltas.length > 3, `expected several deltas, got ${deltas.length}`);
   assert.ok(deltas[0].text.length < textOf(chunks).length, "the first piece must be a piece");
+});
+
+test("a call the user stopped is recorded as stopped, not as a failure", async (t) => {
+  const fx = fixtures();
+  const { adapter, tools, dispose } = mount(fx, { gateway: "http://127.0.0.1:9", baseURL: "http://127.0.0.1:9" });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "stalled";
+
+  const controller = new AbortController();
+  const running = run(adapter, { signal: controller.signal });
+  setTimeout(() => controller.abort(), 120);
+  const chunks = await running;
+  assert.equal(finishOf(chunks), undefined, "an aborted stream ends without a finish chunk");
+
+  const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
+  const { report } = await doctor.execute({});
+  assert.match(report, /上一次调用: .*stopped · \d+ms/);
 });

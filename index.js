@@ -932,7 +932,12 @@ class CatPawAdapter {
       this.server.lastCall = { at: startedAt, model, ms: Date.now() - startedAt, outcome, detail };
     };
     const finishError = function* (error, code) {
-      record("error", error?.message ? String(error.message) : String(error));
+      // Three different things were all landing on "error": a real failure, a
+      // stall we gave up on, and the user pressing stop. A stop is not a fault,
+      // and calling it one makes the doctor read like something broke.
+      const outcome =
+        options.signal?.aborted ? "stopped" : code === FAILURE_CODES.timeout ? "timeout" : "error";
+      record(outcome, error?.message ? String(error.message) : String(error));
       yield errorFinish(error, code);
     };
 
@@ -1255,9 +1260,14 @@ class CatPawAdapter {
       yield { type: "block-end", index, block: { type: "text", text: payload.trailing } };
     }
 
-    if (options.signal?.aborted) return;
+    if (options.signal?.aborted) {
+      // The harness already knows it cancelled; the doctor should not call it a
+      // failure, and it should not read as if nothing happened either.
+      record("stopped", "用户中止");
+      return;
+    }
     if (errorCause) {
-      yield* finishError(errorCause);
+      yield* finishError(errorCause, errorCause?.code);
       return;
     }
     if (errorMessage) {
