@@ -277,6 +277,18 @@ class CatPawServer {
     this.ready = null;
     this.token = null;
     this.signature = "";
+    // Calls currently streaming through this process. A config change must not
+    // kill one of them; it is applied between calls instead.
+    this.inflight = 0;
+    this.restartPending = false;
+  }
+
+  begin() {
+    this.inflight += 1;
+  }
+
+  end() {
+    this.inflight = Math.max(0, this.inflight - 1);
   }
 
   async ensure() {
@@ -375,11 +387,21 @@ class CatPawServer {
     if (!auth || !this.token) return;
     const signature = launchSignature(settings, auth.token);
     if (signature === this.signature) return;
+    if (this.inflight > 0) {
+      debugLog(settings.debug, "launch config changed; restarting once the current calls finish");
+      this.restartPending = true;
+      return;
+    }
     debugLog(settings.debug, "catpaw-cli launch config changed, restarting server");
+    this.restartPending = false;
     await this.stop();
   }
 
   async request(method, params, { stream = false, signal } = {}) {
+    if (this.restartPending && this.inflight === 0) {
+      this.restartPending = false;
+      await this.stop();
+    }
     await this.refreshIfStale();
     const base = await this.ensure();
     const body = { jsonrpc: "2.0", method, params, id: randomUUID() };
@@ -907,13 +929,19 @@ class CatPawAdapter {
     }, settings.timeoutMs);
     touch();
 
+    let released = false;
     const cleanup = () => {
       if (idleTimer) clearTimeout(idleTimer);
       clearTimeout(totalTimer);
       options.signal?.removeEventListener("abort", relay);
+      if (!released) {
+        released = true;
+        this.server.end();
+      }
     };
 
     let response;
+    this.server.begin();
     try {
       response = await this.server.request(
         "agent.start",
@@ -1387,6 +1415,9 @@ function registerCatPawTools(ctx, getSettings, server) {
 
       await step("本地服务", async () => (server.url ? `${server.url}（已启动）` : "未启动（首次调用时自动拉起）"));
 
+      lines.push(
+        `配置: permissionMode=${settings.permissionMode}, excludeNativeTools=${settings.excludeNativeTools.length ? `${settings.excludeNativeTools.length} 个工具` : "关"}, systemPrompt=${settings.systemPrompt}, maxPromptChars=${settings.maxPromptChars}, idleTimeoutMs=${settings.idleTimeoutMs}`,
+      );
       await step("上一次调用", async () => {
         const last = server.lastCall;
         if (!last) return "本进程内还没有调用过";
@@ -1395,9 +1426,6 @@ function registerCatPawTools(ctx, getSettings, server) {
         return `${when} · 模型 ${last.model} · ${last.outcome} · ${last.ms}ms${detail}`;
       });
 
-      lines.push(
-        `配置: permissionMode=${settings.permissionMode}, excludeNativeTools=${settings.excludeNativeTools.length ? `${settings.excludeNativeTools.length} 个工具` : "关"}, systemPrompt=${settings.systemPrompt}, maxPromptChars=${settings.maxPromptChars}, idleTimeoutMs=${settings.idleTimeoutMs}`,
-      );
       return { report: lines.join("\n") };
     },
   });

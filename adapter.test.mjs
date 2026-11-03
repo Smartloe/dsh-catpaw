@@ -248,3 +248,24 @@ test("a run stopped for a permission prompt says what to change", async (t) => {
   assert.equal(finish.reason.kind, "error");
   assert.match(finish.reason.failure.message, /permissionMode/);
 });
+
+test("two calls can share one CLI process", async (t) => {
+  const fx = fixtures();
+  const scenarioFile = join(fx.dir, "scenario");
+  process.env.FAKE_SCENARIO_FILE = scenarioFile;
+  t.after(() => delete process.env.FAKE_SCENARIO_FILE);
+  writeFileSync(scenarioFile, "text");
+
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+
+  // This is the shape the harness produces on its own: the conversation and the
+  // session-title call go out at the same time against the same server.
+  const [first, second] = await Promise.all([run(adapter), run(adapter)]);
+  assert.deepEqual(finishOf(first).reason, { kind: "stop" });
+  assert.deepEqual(finishOf(second).reason, { kind: "stop" });
+  assert.equal(textOf(first), textOf(second));
+
+  const requests = readFileSync(fx.logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(requests.filter((request) => request.method === "agent.start").length, 2);
+});

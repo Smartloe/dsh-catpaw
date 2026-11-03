@@ -16,9 +16,15 @@
  *   stalled     — keeps the socket open with comments and never sends content
  */
 import { createServer } from "node:http";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
-const scenario = process.env.FAKE_SCENARIO ?? "text";
+// Read per request: one long-lived fake server has to serve several scripted
+// calls in a row, and a test may want to change what the next one does.
+const currentScenario = () =>
+  process.env.FAKE_SCENARIO_FILE
+    ? readFileSync(process.env.FAKE_SCENARIO_FILE, "utf8").trim() || "text"
+    : process.env.FAKE_SCENARIO ?? "text";
+const scenario = currentScenario();
 const logPath = process.env.FAKE_CLI_LOG ?? "";
 
 const corpus = {
@@ -96,6 +102,7 @@ const server = createServer((req, res) => {
     }
 
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+    const scenario = currentScenario();
     if (scenario === "stalled") {
       // Keep the socket open and send nothing: this is what a stalled backend
       // looks like to the adapter.
