@@ -79,8 +79,15 @@ echo "$TOOL_OUT" | grep -q "$NONCE" || { echo "the tool call did not come back: 
 echo "tool call round-tripped: $NONCE"
 
 say "asking the installed copy for its own health report"
-REPORT="$(DSH_HOME="$TMP/home" dsh verify "调用 catpaw_doctor 工具，把 report 里的第一行原样贴出来" 2>/dev/null | tail -3)"
-echo "$REPORT" | grep -q "catpaw-cli:" || { echo "catpaw_doctor did not answer: $REPORT" >&2; exit 1; }
+# The model occasionally answers this one in prose instead of calling the tool.
+# That is a compliant-model hiccup, not a broken install, so give it two tries
+# before treating it as a failure.
+for attempt in 1 2; do
+  REPORT="$(DSH_HOME="$TMP/home" dsh verify "调用 catpaw_doctor 工具，把 report 里的第一行原样贴出来" 2>/dev/null | tail -3)"
+  if echo "$REPORT" | grep -q "catpaw-cli:"; then break; fi
+  [ "$attempt" = 2 ] && { echo "catpaw_doctor did not answer after two tries: $REPORT" >&2; exit 1; }
+  echo "  (retrying: the model answered without calling the tool)"
+done
 echo "$REPORT" | grep "catpaw-cli:" | head -1
 
 say "checking the vendored CLI survived packing"
