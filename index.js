@@ -941,6 +941,9 @@ class CatPawAdapter {
     const blocks = { reasoning: null, text: null };
     const shown = { reasoning: "", text: "" };
     let errorMessage = null;
+    // The object, not just its text: it carries the failure code the harness's
+    // retry policy reads, and rebuilding an Error from the message lost it.
+    let errorCause = null;
     let agentEndReason = null;
     let sawAgentEnd = false;
 
@@ -1094,7 +1097,10 @@ class CatPawAdapter {
         }
       }
     } catch (error) {
-      if (!options.signal?.aborted) errorMessage = errorMessage ?? (error?.message ?? String(error));
+      if (!options.signal?.aborted) {
+        errorCause = errorCause ?? error;
+        errorMessage = errorMessage ?? (error?.message ?? String(error));
+      }
     } finally {
       cleanup();
       try {
@@ -1159,6 +1165,10 @@ class CatPawAdapter {
     }
 
     if (options.signal?.aborted) return;
+    if (errorCause) {
+      yield errorFinish(errorCause);
+      return;
+    }
     if (errorMessage) {
       yield errorFinish(new Error(errorMessage));
       return;
