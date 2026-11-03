@@ -71,6 +71,11 @@ OUT="$(DSH_HOME="$TMP/home" dsh verify "只回复两个字：你好" 2>/dev/null
 [ "$OUT" = "你好" ] || { echo "unexpected answer: $OUT" >&2; exit 1; }
 echo "answer: $OUT"
 
+say "asking the installed copy for its own health report"
+REPORT="$(DSH_HOME="$TMP/home" dsh verify "调用 catpaw_doctor 工具，把 report 里的第一行原样贴出来" 2>/dev/null | tail -3)"
+echo "$REPORT" | grep -q "catpaw-cli:" || { echo "catpaw_doctor did not answer: $REPORT" >&2; exit 1; }
+echo "$REPORT" | grep "catpaw-cli:" | head -1
+
 say "checking the vendored CLI survived packing"
 CLI="$PROFILE/node_modules/dsh-catpaw/bin/catpaw-cli"
 [ -f "$CLI" ] || { echo "the tarball does not carry bin/catpaw-cli" >&2; exit 1; }
