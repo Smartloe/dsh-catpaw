@@ -1,0 +1,24 @@
+{
+  "name": "@local/catpaw-llm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CatPaw (妙手) model bridge: adds the local CatPaw agent as a DeepSeek Harness LLM provider.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "icon.svg",
+    "index.js",
+    "locale/*.json",
+    "login.mjs"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

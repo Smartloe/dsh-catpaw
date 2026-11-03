@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# dependencies
+node_modules/
+pnpm-lock.yaml
+
+# logs and temp
+*.log
+*.tmp
+*.zstd
+
+# credentials — never commit a token
+auth.json
+**/auth.json
+.config/

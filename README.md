@@ -1,0 +1,165 @@
+# CatPaw (妙手) bridge for DeepSeek Harness
+
+把妙手（CatPaw）桌面端背后的模型接进 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）的模型选择器：12 个真实模型、可调推理等级、可回传真实工具调用，并且扫码登录后不再依赖妙手 App 常驻。
+
+> **先说适用范围。** 模型请求走 `ai.catpaw.meituan.com`，登录走 `catx.nocode.cn`，两者都是美团内网服务。**只有拥有美团账号（Passport 或 EPassport）并且能访问内网的人才能真正用起来。** 这个仓库公开的意义是分享实现，不是给外部用户提供一个可用的模型源。
+
+## 它做了什么
+
+妙手不是本地模型，也没有 OpenAI / Anthropic 兼容接口。它的模型只能通过本机的 `catpaw-cli` 访问，而该进程只绑 `127.0.0.1` 的随机端口，用 JSON-RPC 2.0 + SSE 通信。
+
+本插件在 DSH 的 `llm` 服务上注册一个 `catpaw` provider，把 DSH 的一次模型调用翻译成一次 CatPaw agent run，再把流式结果翻译回 DSH 的 `StreamChunk`：
+
+```
+DSH agent loop
+  → ctx.llm.stream({ provider:'catpaw', model, messages, system, tools })
+  → CatPawAdapter.stream()
+  → catpaw-cli server (POST /api, stream:true, text/event-stream)
+  → CatPaw cloud
+  → model_chunk { content, reasoningContent }
+  → StreamChunk (reasoning-delta / text-delta / tool-call / finish)
+```
+
+三个关键点：
+
+- **真实模型表**：来自妙手的 `POST /api/agent/maas/model-types`（`tenant=CatDesk`、`scene=CATX_APP`、`env=EXTERNAL`），不是 `product.json` 里那几个内部 ID。
+- **推理等级**：每个模型按它支持的参数（`context` / `thinking` / `effort`）暴露不同的档位，经 `dynamicContext.requestContext.modelParams` 传给服务端。
+- **工具调用**：CLI 只会流文本，所以工具调用走一个显式文本协议，插件解析成真的 `tool-call` 块，由 DSH 执行、DSH 掌握审批。
+
+## 目录
+
+```
+.
+├── catpaw-llm/              DSH 插件本体
+│   ├── index.js             provider、流解析、工具协议、登录工具
+│   ├── login.mjs            扫码登录（纯 HTTP，不依赖 Electron）
+│   ├── cordis.patch.yml     默认模型表
+│   ├── package.json
+│   └── locale/              中英文显示名
+├── bin/catpaw-cli           妙手自带的 agent CLI（见版权说明）
+├── examples/
+│   └── headless-catpaw.yml  无头冒烟测试用的 patch
+└── CLAUDE.md                仓库内的开发指引
+```
+
+## 快速开始
+
+**1. 准备 CLI。** 仓库里的 `bin/catpaw-cli` 直接可用；如果缺了，从妙手 App 里拷一份：
+
+```sh
+mkdir -p ~/.catpaw-dsh/bin
+cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@catpaw/agent-sdk/bin/catpaw-cli" ~/.catpaw-dsh/bin/
+chmod +x ~/.catpaw-dsh/bin/catpaw-cli
+```
+
+解析顺序：配置项 `cliPath` → 环境变量 `CATPAW_CLI` → 仓库内 `bin/catpaw-cli` → `~/.catpaw-dsh/bin/catpaw-cli` → 妙手 App 包内。
+
+**2. 安装插件。**
+
+```sh
+# 在 DSH 会话里
+plugin_manager install_bundle target=<repo>/catpaw-llm
+```
+
+启用 `@local/catpaw-llm`，模型选择器里就会出现 **CatPaw (妙手)**。
+
+**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态。
+
+## 模型
+
+| modelType | 名称 | 推理等级 |
+|---|---|---|
+| 10002544 | LongCat-2.5 | 关闭思考 / 深度思考 |
+| 77 | LongCat-2.0 | 关闭思考 / 深度思考 |
+| 98 | GLM-5.3-FlashX | 低 / 中 / 高 |
+| 91 | GLM-5.3-Flash | 低 / 中 / 高 |
+| 89 | GLM-5.3 | 低 / 中 / 高 |
+| 97 | DeepSeek-V4.1-Flash | 关闭思考 / 低 / 中 / 高 |
+| 64 | DeepSeek-V4-Pro | 关闭思考 / 低 / 中 / 高 |
+| 10002518 | MiniMax-M3.1-Flash | 低 / 中 / 高（默认低） |
+| 70 | MiniMax-M3 | 关闭思考 / 深度思考 |
+| 10002533 | Kimi-K3.1-Pro | 关闭思考 / 低 / 中 / 高 |
+| 83 | Kimi-K3 | 关闭思考 / 低 / 中 / 高 |
+| 0 | Auto | — |
+
+上下文默认 1M（`context: "1024000"`）。等级映射：
+
+- `off` → `thinking: { enabled: false }`
+- `low` / `high` / `max` → `thinking: { enabled: true }` + `effort: "low"|"high"|"max"`
+
+## 工具调用
+
+1. prompt 里用 `<tools>` 段列出所有 Harness 工具（名称、描述、紧凑参数 schema）。
+2. 模型要动手时必须输出：
+
+```
+<<<catpaw_tool_call>>>
+[{"name":"bash","arguments":{"command":"uuidgen"}}]
+<<<end_catpaw_tool_call>>>
+```
+
+3. 插件把这段解析成真实的 `tool-call` 块，**由 DSH 执行并掌管审批**，妙手不参与。
+4. 结果作为 `tool_result` 在下一轮回到模型。
+
+协议在 transcript 之后还会重申一次，因为妙手的模型天然偏好自带工具——那些工具在 `permissionMode: dontAsk` 下全部被拒，Harness 工具是唯一执行路径。
+
+## 配置
+
+写在插件条目的 `config` 里（见 `catpaw-llm/cordis.patch.yml`）：
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `models` | 上表 12 个 | 模型目录；每项含 `id`、`name`、`contextWindow`、`maxTokens`、`params`、可选 `defaultEffort` |
+| `cliPath` | 自动解析 | CLI 二进制路径 |
+| `authPath` | `~/.meituan-catpaw/auth.json` | 凭据文件 |
+| `baseURL` | `https://ai.catpaw.meituan.com` | 模型端点 |
+| `gateway` | `https://catx.nocode.cn` | 登录网关（模型调用仍用 `baseURL`） |
+| `permissionMode` | `dontAsk` | 妙手自身工具循环的权限模式 |
+| `systemPrompt` | `transcript` | `transcript` 把 DSH 的 system prompt 放进 `<system>`；`none` 保留妙手原生提示 |
+| `maxPromptChars` | `120000` | 单轮 prompt 字符预算，超出丢最旧的消息 |
+| `toolResultChars` | `4000` | 单条工具结果截断 |
+| `messageChars` | `20000` | 单条消息截断 |
+| `timeoutMs` / `idleTimeoutMs` | `600000` / `300000` | 总超时 / 无 SSE 帧超时 |
+| `debug` | `false` | 打印 CLI 的 stdout/stderr |
+
+## 登录是怎么工作的
+
+妙手的扫码登录本身是纯 HTTP，不需要 Electron：
+
+```
+GET  https://catx.nocode.cn/api/gateway/passport/login-config   -> { loginEntryUrl }
+open {loginEntryUrl}?state=<hex>&redirect=http://127.0.0.1:<port>/callback&sid=<hex>
+race: 本地回调 (?token=&state=)  vs  GET /api/gateway/passport/poll-token?sid=<hex>
+write ~/.meituan-catpaw/auth.json
+```
+
+个人（Passport）账号**不返回 refresh token**——妙手自己在该 provider 上标注 `canRefresh: false`——所以 token 过期只能重新扫码。企业（EPassport）账号走 `passport.catpaw.meituan.com` 的 device code 流程，会返回 refresh token。
+
+## 验证
+
+```sh
+cd <repo>
+dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
+```
+
+期望 stdout 输出 `你好`、退出码 `0`。这条路径加载的就是 `catpaw-llm/index.js`，和 GUI 走同一份代码。
+
+工具调用可以用一个模型猜不到的输入验证：
+
+```sh
+echo -n "nonce-$(date +%s)" > /tmp/probe.txt
+dsh headless --patch ./examples/headless-catpaw.yml "用 bash 执行 cat /tmp/probe.txt，把内容原样告诉我"
+```
+
+## 已知限制
+
+- 模型请求是本机 `catpaw-cli` 进程，只绑 `127.0.0.1`，只有本机能调。
+- 工具调用依赖模型遵守文本协议；不遵守时会退化成纯文本回答，重试或换模型（LongCat-2.5 与 DeepSeek-V4.1-Flash 实测可用）。
+- 个人账号 token 无法自动续期，到期需重新扫码。
+- 每轮都把整段对话渲染进 prompt，长会话重复发送上下文；`maxPromptChars` 会丢弃最旧的消息。
+
+## 版权与许可
+
+源代码以 MIT 发布，见 [LICENSE](LICENSE)。
+
+**`bin/catpaw-cli` 是美团（Meituan）所有的专有二进制，不随本仓库的 MIT 条款授权。** 它在这里只为方便取用；使用与再分发请遵循其所有者允许的范围。本项目引用的内网服务端点同样归美团所有，本许可证不授予你对它们的任何权利。

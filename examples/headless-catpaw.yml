@@ -1,0 +1,19 @@
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: catpaw
+    model: "10002544"
+- insert:
+    - id: catpaw-llm
+      name: '../catpaw-llm/index.js'
+      config:
+        permissionMode: dontAsk
+        systemPrompt: transcript
+        maxPromptChars: 120000
+        toolResultChars: 4000
+        models:
+          - id: "10002544"
+            name: "LongCat-2.5"
+            contextWindow: 1024000
+            maxTokens: 32768
+            params: ["context", "thinking"]
