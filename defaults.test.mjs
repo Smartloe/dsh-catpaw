@@ -98,3 +98,17 @@ test("the documented resolution order holds", async (t) => {
   process.env.CATPAW_CLI = join(dir, "missing");
   assert.equal(readSettings({}).cliPath, packaged);
 });
+
+test("the documented reasoning rows exist for every model but Auto", async () => {
+  const { reasoningFor } = await import("./index.js");
+  const models = readSettings({}).models;
+  const rows = models.map((model) => [String(model.id), reasoningFor(model)]);
+  const withoutRow = rows.filter(([, row]) => !row).map(([id]) => id);
+  assert.deepEqual(withoutRow, ["0"], "only Auto has no reasoning row");
+
+  const efforts = Object.fromEntries(rows.map(([id, row]) => [id, row ? row.efforts.map((effort) => effort.id) : []]));
+  // these groupings are what README's model table promises
+  for (const id of ["10002544", "77", "70"]) assert.deepEqual(efforts[id], ["off", "high"], id);
+  for (const id of ["98", "91", "89", "10002518"]) assert.deepEqual(efforts[id], ["low", "high", "max"], id);
+  for (const id of ["97", "64", "10002533", "83"]) assert.deepEqual(efforts[id], ["off", "low", "high", "max"], id);
+});
