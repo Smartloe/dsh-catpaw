@@ -3,6 +3,7 @@
       name: 'dsh-catpaw'
       config:
         permissionMode: dontAsk
+        excludeNativeTools: true
         systemPrompt: transcript
         maxPromptChars: 120000
         toolResultChars: 4000

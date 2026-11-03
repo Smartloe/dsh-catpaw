@@ -50,7 +50,9 @@ cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@
 chmod +x ~/.catpaw-dsh/bin/catpaw-cli
 ```
 
-Resolution order: config `cliPath` → `CATPAW_CLI` → `~/.catpaw-dsh/bin/catpaw-cli` → the 妙手 bundle.
+Resolution order: config `cliPath` → `CATPAW_CLI` → the copy in this repository → `~/.catpaw-dsh/bin/catpaw-cli` → the 妙手 bundle.
+
+The bundled copy is a **macOS arm64** binary; on other platforms point `cliPath` at your own.
 
 **2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted.
 
@@ -140,6 +142,7 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
+node --test stream-text.test.mjs prompt.test.mjs   # 18 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 # stdout: 你好！有什么可以帮你的吗？
 ```

@@ -54,6 +54,8 @@ chmod +x ~/.catpaw-dsh/bin/catpaw-cli
 
 解析顺序：配置项 `cliPath` → 环境变量 `CATPAW_CLI` → 仓库内 `bin/catpaw-cli` → `~/.catpaw-dsh/bin/catpaw-cli` → 妙手 App 包内。
 
+仓库里的副本是 **macOS arm64** 的；在别的平台用 `cliPath` 指向你自己那份（妙手 App 里的同款二进制）。
+
 **2. 安装插件。**
 
 ```sh
@@ -143,6 +145,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
+node --test stream-text.test.mjs prompt.test.mjs   # 18 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 ```
 

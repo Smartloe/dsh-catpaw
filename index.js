@@ -719,22 +719,42 @@ class CatPawAdapter {
         aliases.set(aliasTool(tool.name), tool.name);
       }
     }
+    debugLog(settings.debug, `prompt ${prompt.length} chars, ${(options.tools ?? []).length} tools, model ${model}`);
     const directory = this.resolveDirectory(options, settings);
     const entry = settings.models.find((candidate) => String(candidate.id) === model);
     const modelParams = modelParamsFor(entry, options.reasoningEffort);
     const hasModelParams = Object.keys(modelParams).length > 0;
 
     const abort = new AbortController();
-    const relay = () => abort.abort(options.signal?.reason ?? new Error("aborted"));
+    // CatPaw keeps running server-side after we drop the SSE stream, so a stop
+    // has to reach the CLI too — otherwise the turn keeps burning quota in the
+    // background. The id arrives on the first frame that carries it.
+    let conversationId = null;
+    let stopped = false;
+    const stopBackend = () => {
+      if (stopped || !conversationId) return;
+      stopped = true;
+      void this.server.request("agent.stop", { conversationId }).catch(() => {});
+    };
+    const relay = () => {
+      abort.abort(options.signal?.reason ?? new Error("aborted"));
+      stopBackend();
+    };
     if (options.signal?.aborted) relay();
     else options.signal?.addEventListener("abort", relay, { once: true });
 
     let idleTimer;
     const touch = () => {
       if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => abort.abort(new Error("CatPaw 响应空闲超时")), settings.idleTimeoutMs);
+      idleTimer = setTimeout(() => {
+        abort.abort(new Error("CatPaw 响应空闲超时"));
+        stopBackend();
+      }, settings.idleTimeoutMs);
     };
-    const totalTimer = setTimeout(() => abort.abort(new Error("CatPaw 响应总超时")), settings.timeoutMs);
+    const totalTimer = setTimeout(() => {
+      abort.abort(new Error("CatPaw 响应总超时"));
+      stopBackend();
+    }, settings.timeoutMs);
     touch();
 
     const cleanup = () => {
@@ -864,6 +884,9 @@ class CatPawAdapter {
             event && typeof event === "object" && event.data && typeof event.data === "object" && !Array.isArray(event.data)
               ? event.data
               : event;
+          if (typeof data?.conversationId === "string" && data.conversationId.length > 0) {
+            conversationId = data.conversationId;
+          }
           const type = event?.type;
           if (!type) {
             const result = frame?.result;
