@@ -95,7 +95,7 @@ To make it the profile default, add this to `~/.dsh/profiles/desktop/cordis.patc
 3. The adapter parses that payload into real harness `tool-call` blocks, so **DeepSeek Harness** executes the tool and owns the approval decision — CatPaw never runs it.
 4. Results return as `tool_result` messages on the next turn.
 
-The contract is restated after the transcript, because CatPaw's model otherwise prefers its own built-in tools; those stay denied under `permissionMode: dontAsk`. A turn that emits no marker streams as ordinary text.
+CatPaw's own 19 tools are excluded at CLI spawn (`excludeTools`, on by default via `excludeNativeTools`), so the marked block is the only way the model can act — that is what took tool-call success from roughly one run in three to 13 of 14. The contract is also restated after the transcript. A turn that emits no marker streams as ordinary text.
 
 ## Configuration
 
@@ -108,6 +108,7 @@ The row config (see `cordis.patch.yml`) accepts:
 | `baseURL` | `https://ai.catpaw.meituan.com` | CatPaw cloud endpoint (the app's endpoint) |
 | `gateway` | `https://catx.nocode.cn` | Login gateway used by `catpaw_login`; model calls still use `baseURL` |
 | `permissionMode` | `dontAsk` | `dontAsk`, `acceptEdits`, `default`, `plan`, `bypassPermissions`, `unsafeBypassPermissions` |
+| `excludeNativeTools` | `true` | Hide CatPaw's built-in tools (`bash`, `read_file`, … 19 names) from the model. `true` uses the built-in list, an array hides exactly those names, `false` keeps them |
 | `models` | the 12 models listed by 妙手's `/api/agent/maas/model-types` | Catalogue shown in the picker. Each entry: `id` (modelType), `name`, `contextWindow` (default `1024000` = 1M), `maxTokens`, `params` (`context`/`thinking`/`effort`), optional `defaultEffort` |
 | `timeoutMs` | `600000` | Whole-call timeout |
 | `idleTimeoutMs` | `300000` | No-SSE-frame timeout |

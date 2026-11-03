@@ -104,7 +104,7 @@ plugin_manager install_bundle target=<repo>
 3. 插件把这段解析成真实的 `tool-call` 块，**由 DSH 执行并掌管审批**，妙手不参与。
 4. 结果作为 `tool_result` 在下一轮回到模型。
 
-协议在 transcript 之后还会重申一次，因为妙手的模型天然偏好自带工具——那些工具在 `permissionMode: dontAsk` 下全部被拒，Harness 工具是唯一执行路径。
+启动 catpaw-cli 时会把妙手自带的 19 个工具用 `excludeTools` 全部排除（`excludeNativeTools: true`，默认开），模型手里只剩标记块这一条路——这是工具调用成功率从约 1/3 提到 13/14 的关键。协议在 transcript 之后还会重申一次（recency）。
 
 ## 配置
 
@@ -118,6 +118,7 @@ plugin_manager install_bundle target=<repo>
 | `baseURL` | `https://ai.catpaw.meituan.com` | 模型端点 |
 | `gateway` | `https://catx.nocode.cn` | 登录网关（模型调用仍用 `baseURL`） |
 | `permissionMode` | `dontAsk` | 妙手自身工具循环的权限模式 |
+| `excludeNativeTools` | `true` | 关掉妙手自带的工具（`bash`/`read_file`/… 共 19 个）。`true` 用内置名单，数组则按名单，`false` 保留 |
 | `systemPrompt` | `transcript` | `transcript` 把 DSH 的 system prompt 放进 `<system>`；`none` 保留妙手原生提示 |
 | `maxPromptChars` | `120000` | 单轮 prompt 字符预算，超出丢最旧的消息 |
 | `toolResultChars` | `4000` | 单条工具结果截断 |

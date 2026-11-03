@@ -123,6 +123,37 @@ function modelParamsFor(entry, effort) {
   return modelParams;
 }
 
+/**
+ * Tools CatPaw's own agent runtime hands the model. Under `dontAsk` every one of
+ * them is denied, and a model that calls one gets a refusal and then narrates it
+ * instead of using the marked tool block — the single largest source of "the
+ * bridge looks dumb" reports. The CLI config accepts `excludeTools` by exact
+ * name (a `*` wildcard is ignored), so the list is spelled out; excluding all of
+ * them leaves the model with no tool but ours. Measured 2026-11-04 on
+ * catpaw-cli 1.2.0-beta.45.
+ */
+const NATIVE_TOOLS = [
+  "bash",
+  "read_file",
+  "write",
+  "edit",
+  "grep",
+  "glob_file_search",
+  "list_dir",
+  "multi_edit",
+  "string_replace",
+  "delete_file",
+  "read_lints",
+  "fetch_rules",
+  "web_fetch",
+  "web_search",
+  "todo_write",
+  "get_goal",
+  "create_goal",
+  "update_goal",
+  "task_stop",
+];
+
 const PERMISSION_MODES = new Set([
   "dontAsk",
   "acceptEdits",
@@ -156,6 +187,16 @@ function readValue(value, fallback) {
   return value === undefined || value === null ? fallback : value;
 }
 
+/**
+ * `excludeNativeTools`: `true` (default) hides CatPaw's built-in tools, an array
+ * hides exactly those names, `false` leaves them visible.
+ */
+function readExclusions(value) {
+  if (value === false) return [];
+  if (Array.isArray(value)) return value.filter((name) => typeof name === "string" && name.length > 0);
+  return NATIVE_TOOLS;
+}
+
 function readSettings(config) {
   const rawModels = readValue(config?.models, DEFAULT_MODELS);
   const models = Array.isArray(rawModels) && rawModels.length > 0 ? rawModels : DEFAULT_MODELS;
@@ -167,6 +208,7 @@ function readSettings(config) {
     baseURL: String(readValue(config?.baseURL, DEFAULT_BASE_URL)),
     gateway: String(readValue(config?.gateway, DEFAULT_GATEWAY)),
     permissionMode: PERMISSION_MODES.has(permission) ? permission : "dontAsk",
+    excludeNativeTools: readExclusions(readValue(config?.excludeNativeTools, true)),
     systemPrompt: SYSTEM_PROMPT_MODES.has(systemPrompt) ? systemPrompt : "transcript",
     models,
     timeoutMs: Number(readValue(config?.timeoutMs, 600000)) || 600000,
@@ -206,6 +248,16 @@ function readAuth(authPath, { required = true } = {}) {
   };
 }
 
+/** Everything the spawned CLI caches from its environment, in comparable form. */
+function launchSignature(settings, token) {
+  return JSON.stringify([
+    settings.baseURL,
+    settings.cliPath,
+    token,
+    settings.excludeNativeTools,
+  ]);
+}
+
 /**
  * Owns one `catpaw-cli server` child process.
  *
@@ -221,6 +273,7 @@ class CatPawServer {
     this.proc = null;
     this.ready = null;
     this.token = null;
+    this.signature = "";
   }
 
   async ensure() {
@@ -244,12 +297,15 @@ class CatPawServer {
     const auth = readAuth(settings.authPath);
     const token = auth.token;
     this.token = token;
+    this.signature = launchSignature(settings, token);
     const config = {
       baseURL: settings.baseURL,
       cookie: `X-Passport-Token=${token}`,
       authTokens: { "x-passport-token": token },
       source: "CatX",
       mode: "CATX_APP",
+      // Leave the model with exactly one way to act: the marked tool block.
+      ...(settings.excludeNativeTools.length > 0 ? { excludeTools: settings.excludeNativeTools } : {}),
     };
     debugLog(settings.debug, "starting", settings.cliPath);
     const proc = spawn(settings.cliPath, ["server", "--host", "127.0.0.1"], {
@@ -299,20 +355,23 @@ class CatPawServer {
   }
 
   /**
-   * A fresh QR login rewrites auth.json while the server keeps the old token in
-   * its environment. Restart it so the next request uses the new credential.
+   * The CLI only reads its config at spawn: a fresh QR login rewrites auth.json,
+   * and the plugin row's `baseURL` / `excludeNativeTools` can change on a config
+   * reload. Restart the server when any of them moved, so the next call uses the
+   * new values without restarting DSH.
    */
-  async refreshIfTokenChanged() {
+  async refreshIfStale() {
     const settings = this.getSettings();
     const auth = readAuth(settings.authPath, { required: false });
     if (!auth || !this.token) return;
-    if (auth.token === this.token) return;
-    debugLog(settings.debug, "auth token changed, restarting catpaw-cli server");
+    const signature = launchSignature(settings, auth.token);
+    if (signature === this.signature) return;
+    debugLog(settings.debug, "catpaw-cli launch config changed, restarting server");
     await this.stop();
   }
 
   async request(method, params, { stream = false, signal } = {}) {
-    await this.refreshIfTokenChanged();
+    await this.refreshIfStale();
     const base = await this.ensure();
     const body = { jsonrpc: "2.0", method, params, id: randomUUID() };
     if (stream) body.stream = true;
@@ -376,7 +435,7 @@ function compactSchema(schema) {
 }
 
 /** Render the tool catalogue and the call protocol the model must follow. */
-function renderToolSection(tools) {
+export function renderToolSection(tools) {
   const example = tools.find((tool) => tool && typeof tool.name === "string");
   const exampleName = example?.name ? aliasTool(example.name) : aliasTool("bash");
   const exampleArgs = example?.name === "bash" ? '{"command":"ls"}' : "{}";
@@ -413,7 +472,7 @@ function renderToolSection(tools) {
 }
 
 /** Pull `{name, arguments}` entries out of whatever the model wrapped them in. */
-function parseToolCalls(payload, aliases = new Map()) {
+export function parseToolCalls(payload, aliases = new Map()) {
   let body = String(payload ?? "").trim();
   const fence = body.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) body = fence[1].trim();
@@ -424,13 +483,19 @@ function parseToolCalls(payload, aliases = new Map()) {
   try {
     parsed = JSON.parse(body);
   } catch {
+    // A cut-off payload is common when the model runs into its output limit:
+    // keep the calls that arrived complete instead of dropping the whole block.
     const cut = Math.max(body.lastIndexOf("]"), body.lastIndexOf("}"));
     if (cut < 0) return [];
-    try {
-      parsed = JSON.parse(body.slice(0, cut + 1));
-    } catch {
-      return [];
+    const head = body.slice(0, cut + 1);
+    parsed = undefined;
+    for (const tail of ["", "]", "}]", "}"]) {
+      try {
+        parsed = JSON.parse(head + tail);
+        break;
+      } catch {}
     }
+    if (parsed === undefined) return [];
   }
   const list = Array.isArray(parsed) ? parsed : [parsed];
   const calls = [];
@@ -701,7 +766,8 @@ class CatPawAdapter {
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       cleanup();
-      yield errorFinish(new Error(`CatPaw HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`));
+      const auth = response.status === 401 || response.status === 403 ? "（登录态可能已失效，运行 catpaw_login 重新扫码）" : "";
+      yield errorFinish(new Error(`CatPaw HTTP ${response.status}${auth}${detail ? `: ${detail.slice(0, 300)}` : ""}`));
       return;
     }
 
@@ -845,8 +911,11 @@ class CatPawAdapter {
               break;
             }
             case "agent_error": {
-              errorMessage =
+              const raw =
                 typeof data.error === "string" ? data.error : (data.error?.message ?? "CatPaw agent 报错");
+              errorMessage = /unauthor|forbidden|token|401|403/i.test(raw)
+                ? `${raw}（登录态可能已失效，运行 catpaw_login 重新扫码）`
+                : raw;
               break;
             }
             case "interaction_pending": {
