@@ -54,7 +54,7 @@ Resolution order: config `cliPath` → `CATPAW_CLI` → the copy in this reposit
 
 The bundled copy is a **macOS arm64** binary; on other platforms point `cliPath` at your own.
 
-**2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted; when something is unclear, ask the agent for `catpaw_doctor` — one report covering the resolved CLI binary, the credential, the gateway, whether the configured catalogue still matches 妙手's live one, the local server, and the effective settings.
+**2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted; when something is unclear, ask the agent for `catpaw_doctor` — one report covering the resolved CLI binary, the credential, the gateway, whether the configured catalogue still matches 妙手's live one, the local server, how the previous call went, and the effective settings.
 
 Under the hood it is the same pure-HTTP flow the app uses — no Electron:
 
@@ -142,7 +142,7 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
-node --test                        # 54 cases, offline
+node --test                        # 56 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # the installed shape (what `dsh plugin add` produces): pack, install into a

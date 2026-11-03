@@ -70,7 +70,7 @@ plugin_manager install_bundle target=<repo>
 
 启用 `dsh-catpaw`，模型选择器里就会出现 **CatPaw (妙手)**。
 
-**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态；说不清哪里不对时，让 agent 调 `catpaw_doctor`——它一次性报告：CLI 解析到哪份二进制、凭据是否还有效、网关是否可达、**线上模型表与配置是否一致**、本地服务是否在跑，以及当前生效的设置。
+**3. 扫码登录。** 对 agent 说「扫码登录妙手」，它会调用 `catpaw_login` 返回授权链接；浏览器完成扫码后凭据自动写入 `~/.meituan-catpaw/auth.json`，下一次调用自动生效，不用重启。`catpaw_auth_status` 可以随时查状态；说不清哪里不对时，让 agent 调 `catpaw_doctor`——它一次性报告：CLI 解析到哪份二进制、凭据是否还有效、网关是否可达、**线上模型表与配置是否一致**、本地服务是否在跑、**上一次调用耗时与结果**，以及当前生效的设置。
 
 ## 模型
 
@@ -147,7 +147,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test                        # 54 个用例，不联网
+node --test                        # 56 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、

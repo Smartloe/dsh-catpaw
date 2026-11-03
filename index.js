@@ -864,6 +864,17 @@ class CatPawAdapter {
     const modelParams = modelParamsFor(entry, options.reasoningEffort);
     const hasModelParams = Object.keys(modelParams).length > 0;
 
+    // One small record of the last finished call, so `catpaw_doctor` can answer
+    // "was it slow? did it fail?" without the user digging through logs.
+    const startedAt = Date.now();
+    const record = (outcome, detail = "") => {
+      this.server.lastCall = { at: startedAt, model, ms: Date.now() - startedAt, outcome, detail };
+    };
+    const finishError = function* (error, code) {
+      record("error", error?.message ? String(error.message) : String(error));
+      yield errorFinish(error, code);
+    };
+
     const abort = new AbortController();
     // CatPaw keeps running server-side after we drop the SSE stream, so a stop
     // has to reach the CLI too — otherwise the turn keeps burning quota in the
@@ -920,7 +931,7 @@ class CatPawAdapter {
       if (options.signal?.aborted) return;
       // A refusal to connect is worth another attempt; a bad response is not.
       const code = error?.code === FAILURE_CODES.timeout ? FAILURE_CODES.timeout : FAILURE_CODES.transport;
-      yield errorFinish(error, code);
+      yield* finishError(error, code);
       return;
     }
 
@@ -934,7 +945,7 @@ class CatPawAdapter {
           : response.status >= 500
             ? FAILURE_CODES.server
             : FAILURE_CODES.permanent;
-      yield errorFinish(
+      yield* finishError(
         new Error(`CatPaw HTTP ${response.status}${auth}${detail ? `: ${detail.slice(0, 300)}` : ""}`),
         code,
       );
@@ -1179,15 +1190,15 @@ class CatPawAdapter {
 
     if (options.signal?.aborted) return;
     if (errorCause) {
-      yield errorFinish(errorCause);
+      yield* finishError(errorCause);
       return;
     }
     if (errorMessage) {
-      yield errorFinish(new Error(errorMessage));
+      yield* finishError(new Error(errorMessage));
       return;
     }
     if (sawAgentEnd && agentEndReason === "interaction_pending") {
-      yield errorFinish(
+      yield* finishError(
         new Error("妙手停在一个工具权限确认上，而 DSH 桥接没有权限界面。请把 permissionMode 改成 dontAsk 或 bypassPermissions。"),
       );
       return;
@@ -1196,15 +1207,16 @@ class CatPawAdapter {
     // session, or the turn budget. Reporting that as a normal stop handed the
     // harness half an answer with no indication anything went wrong.
     if (sawAgentEnd && !AGENT_END_OK.has(agentEndReason)) {
-      yield errorFinish(
+      yield* finishError(
         new Error(`CatPaw 提前结束（${agentEndReason}）${shown.text || shown.reasoning ? "，回答可能不完整" : ""}`),
       );
       return;
     }
     if (!shown.text && !shown.reasoning && toolCalls.length === 0) {
-      yield errorFinish(new Error("CatPaw 没有返回任何内容"), FAILURE_CODES.empty);
+      yield* finishError(new Error("CatPaw 没有返回任何内容"), FAILURE_CODES.empty);
       return;
     }
+    record(toolCalls.length > 0 ? "tool-calls" : "stop", `${shown.text.length} 字`);
     yield { type: "finish", reason: { kind: toolCalls.length > 0 ? "tool-calls" : "stop" } };
   }
 }
@@ -1313,7 +1325,7 @@ function registerCatPawTools(ctx, getSettings, server) {
   ctx.tools.register({
     name: "catpaw_doctor",
     description:
-      "One-shot health check for the CatPaw bridge: which catpaw-cli binary resolves, whether the credential file exists and the token is still accepted, whether the gateway answers, whether the configured model catalogue still matches 妙手's live one, whether the local server is running, and the effective settings. Use it when a call fails for an unclear reason.",
+      "One-shot health check for the CatPaw bridge: which catpaw-cli binary resolves, whether the credential file exists and the token is still accepted, whether the gateway answers, whether the configured model catalogue still matches 妙手's live one, whether the local server is running, how the previous call went, and the effective settings. Use it when a call fails for an unclear reason.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     output: {
       schema: {
@@ -1371,6 +1383,14 @@ function registerCatPawTools(ctx, getSettings, server) {
       });
 
       await step("本地服务", async () => (server.url ? `${server.url}（已启动）` : "未启动（首次调用时自动拉起）"));
+
+      await step("上一次调用", async () => {
+        const last = server.lastCall;
+        if (!last) return "本进程内还没有调用过";
+        const when = new Date(last.at).toLocaleTimeString();
+        const detail = last.detail ? ` — ${last.detail}` : "";
+        return `${when} · 模型 ${last.model} · ${last.outcome} · ${last.ms}ms${detail}`;
+      });
 
       lines.push(
         `配置: permissionMode=${settings.permissionMode}, excludeNativeTools=${settings.excludeNativeTools.length ? `${settings.excludeNativeTools.length} 个工具` : "关"}, systemPrompt=${settings.systemPrompt}, maxPromptChars=${settings.maxPromptChars}, idleTimeoutMs=${settings.idleTimeoutMs}`,

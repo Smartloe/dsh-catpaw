@@ -203,3 +203,34 @@ test("a binary without the executable bit explains itself", async (t) => {
   assert.match(finish.reason.failure.message, /执行权限/);
   assert.equal(finish.reason.failure.code, "TRANSPORT");
 });
+
+test("the last call is remembered for the doctor", async (t) => {
+  const fx = fixtures();
+  // point the gateway at a closed port: the doctor's network probes should fail
+  // instantly instead of waiting out their timeouts on a machine without the
+  // vendor network
+  const { adapter, tools, dispose } = mount(fx, { gateway: "http://127.0.0.1:9", baseURL: "http://127.0.0.1:9" });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+  await run(adapter);
+
+  const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
+  const { report } = await doctor.execute({});
+  assert.match(report, /上一次调用: .*模型 10002544 · stop · \d+ms — \d+ 字/);
+});
+
+test("a failed call leaves the failure in the doctor's report too", async (t) => {
+  const fx = fixtures();
+  const { adapter, tools, dispose } = mount(fx, {
+    idleTimeoutMs: 300,
+    gateway: "http://127.0.0.1:9",
+    baseURL: "http://127.0.0.1:9",
+  });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "stalled";
+  await run(adapter);
+
+  const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
+  const { report } = await doctor.execute({});
+  assert.match(report, /上一次调用: .*error · \d+ms — CatPaw 响应空闲超时/);
+});
