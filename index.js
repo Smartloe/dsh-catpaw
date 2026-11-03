@@ -633,7 +633,7 @@ export function parseToolCalls(payload, aliases = new Map()) {
   return calls;
 }
 
-function renderBlocks(content, limits) {
+export function renderBlocks(content, limits) {
   const parts = [];
   for (const block of content ?? []) {
     if (!block || typeof block !== "object") continue;
@@ -651,7 +651,11 @@ function renderBlocks(content, limits) {
         parts.push(`[file: ${block.attachment?.name ?? "file"}]`);
         break;
       case "tool-call": {
-        const args = clipText(String(block.arguments ?? "{}"), Math.min(limits.messageChars, 2000));
+        // `arguments` is a JSON string in this adapter's own blocks, but a
+        // history imported from another provider can hold the parsed object;
+        // String({}) would render "[object Object]" and lose the call.
+        const raw = typeof block.arguments === "string" ? block.arguments : JSON.stringify(block.arguments ?? {});
+        const args = clipText(raw, Math.min(limits.messageChars, 2000));
         // Same names the <tools> section advertises, so the model's own history
         // does not contradict the protocol it is being asked to follow.
         parts.push(`[tool call: ${block.name ? aliasTool(String(block.name)) : "?"} ${args}]`);
@@ -670,7 +674,7 @@ function renderBlocks(content, limits) {
   return parts.join("\n");
 }
 
-function renderMessage(message, limits) {
+export function renderMessage(message, limits) {
   if (!message || typeof message !== "object") return "";
   const content = renderBlocks(message.content, limits);
   if (message.role === "tool") {
@@ -870,7 +874,11 @@ class CatPawAdapter {
         if (session) {
           if (workingDirectory) {
             try {
-              return workingDirectory.get(session);
+              // A lookup that answers with nothing is not an answer: fall through
+              // to the session's own header instead of handing `undefined` to
+              // the CLI, which silently runs in its own cwd.
+              const resolved = workingDirectory.get(session);
+              if (typeof resolved === "string" && resolved.length > 0) return resolved;
             } catch {}
           }
           if (session.header?.cwd) return session.header.cwd;

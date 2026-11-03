@@ -148,7 +148,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test                        # 70 个用例，不联网
+node --test                        # 74 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、

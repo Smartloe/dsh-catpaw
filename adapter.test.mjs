@@ -269,3 +269,36 @@ test("two calls can share one CLI process", async (t) => {
   const requests = readFileSync(fx.logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(requests.filter((request) => request.method === "agent.start").length, 2);
 });
+
+test("the working directory follows the documented precedence", async (t) => {
+  const fx = fixtures();
+
+  // A context whose session and working-directory services behave as the
+  // harness's do, so the fallback chain can be checked without a running app.
+  const session = { header: { cwd: "/from/session/header" } };
+  const build = (workingGet, defaultDir) => {
+    let adapter = null;
+    apply(
+      {
+        llm: { registerAdapter: (_p, instance) => (adapter = instance) },
+        tools: { register: () => {} },
+        effect: () => () => {},
+        get: (name) =>
+          name === "sessions"
+            ? { get: (id) => (id === "s-1" ? session : undefined) }
+            : name === "workingDirectory"
+              ? { get: workingGet, defaultDirectory: defaultDir }
+              : undefined,
+      },
+      { cliPath: FAKE_CLI, authPath: fx.authPath },
+    );
+    return adapter;
+  };
+
+  const settings = { directory: "" };
+  assert.equal(build(() => "/from/service", "/default").resolveDirectory({}, { directory: "/explicit" }), "/explicit");
+  assert.equal(build(() => "/from/service", "/default").resolveDirectory({ sessionId: "s-1" }, settings), "/from/service");
+  assert.equal(build(() => undefined, "/default").resolveDirectory({ sessionId: "s-1" }, settings), "/from/session/header");
+  assert.equal(build(() => undefined, "/default").resolveDirectory({ sessionId: "unknown" }, settings), "/default");
+  assert.equal(build(() => undefined, undefined).resolveDirectory({}, settings), process.cwd());
+});

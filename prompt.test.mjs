@@ -165,3 +165,40 @@ test("the tool protocol is restated even when the budget is tight", () => {
 test("an empty conversation still renders something usable", () => {
   assert.equal(renderPrompt({ messages: [] }, settingsFor(120000)), "（空对话）");
 });
+
+test("a tool call whose arguments arrived as an object is still readable", async () => {
+  const { renderMessage } = await import("./index.js");
+  const rendered = renderMessage(
+    { role: "assistant", content: [{ type: "tool-call", name: "bash", arguments: { command: "ls" } }] },
+    { messageChars: 20000, toolResultChars: 4000 },
+  );
+  assert.match(rendered, /\[tool call: dsh_bash \{"command":"ls"\}\]/);
+  assert.doesNotMatch(rendered, /object Object/);
+});
+
+test("a tool result keeps its error flag and its call id", async () => {
+  const { renderMessage } = await import("./index.js");
+  const rendered = renderMessage(
+    { role: "tool", toolCallId: "call-1", isError: true, content: [{ type: "text", text: "boom" }] },
+    { messageChars: 20000, toolResultChars: 4000 },
+  );
+  assert.match(rendered, /^<tool_result call_id="call-1" error="true">/);
+  assert.match(rendered, /boom/);
+});
+
+test("attachments and unknown blocks render as placeholders, not crashes", async () => {
+  const { renderMessage } = await import("./index.js");
+  const rendered = renderMessage(
+    {
+      role: "user",
+      content: [
+        { type: "image", attachment: { name: "shot.png" } },
+        { type: "file", attachment: { name: "report.pdf" } },
+        { type: "mystery" },
+      ],
+    },
+    { messageChars: 20000, toolResultChars: 4000 },
+  );
+  assert.match(rendered, /\[image: shot\.png\]/);
+  assert.match(rendered, /\[file: report\.pdf\]/);
+});
