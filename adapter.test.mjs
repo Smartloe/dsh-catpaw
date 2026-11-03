@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +13,10 @@ const FAKE_CLI = fileURLToPath(new URL("./fixtures/fake-cli.mjs", import.meta.ur
 
 /** A credential file the adapter will accept, and a temp dir for test artefacts. */
 function fixtures() {
+  // A checkout does not always carry the executable bit (this repository's
+  // volume reports everything as 0755, so git records 0644). The adapter spawns
+  // the path directly, so make it runnable before any test uses it.
+  chmodSync(FAKE_CLI, 0o755);
   const dir = mkdtempSync(join(tmpdir(), "dsh-catpaw-test-"));
   const authPath = join(dir, "auth.json");
   writeFileSync(
