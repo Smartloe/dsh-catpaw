@@ -1,0 +1,157 @@
+# CatPaw (妙手) model bridge
+
+`dsh-catpaw` registers a `catpaw` LLM provider on DeepSeek Harness's `llm` service, so 妙手's 12 real models (LongCat, GLM, DeepSeek, MiniMax, Kimi, Auto) are selectable in the model picker as **CatPaw (妙手)**.
+
+## What it does
+
+妙手 ships no local model and no OpenAI/Anthropic-compatible endpoint. Its model is only reachable through the local `catpaw-cli server`, which speaks JSON-RPC 2.0 over HTTP and streams SSE from `agent.start`. This plugin translates a harness model call into one CatPaw agent run and streams the model's reasoning/text back as harness `StreamChunk`s:
+
+```
+DSH agent loop
+  -> ctx.llm.stream({ provider: 'catpaw', model: '77', messages, system, tools })
+  -> CatPawAdapter.stream()
+  -> catpaw-cli server (POST /api, stream: true, text/event-stream)
+  -> CatPaw cloud
+  -> model_chunk { content, reasoningContent }
+  -> StreamChunk (reasoning-delta / text-delta / block-start / block-end / finish)
+```
+
+The plugin also passes the same per-launch config the desktop app injects (`baseURL` + passport token from `~/.meituan-catpaw/auth.json`), because the CLI's built-in default endpoint (`catpaw-agent.sankuai.com`) is not reachable on a normal network.
+
+## Requirements
+
+- The `catpaw-cli` binary — either the copy bundled with 妙手, or a standalone copy at `~/.catpaw-dsh/bin/catpaw-cli` (see [Login without 妙手](#login-without-妙手))
+- A CatPaw account. Run `catpaw_login` once and scan the QR code; the credential is written to `~/.meituan-catpaw/auth.json`
+- Calls consume the signed-in account's CatPaw quota
+
+## Install
+
+The repository root is the plugin package, so it installs straight from GitHub:
+
+```sh
+dsh plugin --profile web add github:Smartloe/dsh-catpaw
+```
+
+From a checked-out clone, a DSH session can also install it locally:
+
+```
+plugin_manager install_bundle target=<repo>
+```
+
+## Login without 妙手
+
+The bridge no longer needs the desktop app to stay installed or signed in.
+
+**1. The CLI binary.** Copy it once, then the plugin prefers that copy:
+
+```sh
+mkdir -p ~/.catpaw-dsh/bin
+cp "/Applications/妙手.app/Contents/Resources/app.asar.unpacked/node_modules/@catpaw/agent-sdk/bin/catpaw-cli" ~/.catpaw-dsh/bin/
+chmod +x ~/.catpaw-dsh/bin/catpaw-cli
+```
+
+Resolution order: config `cliPath` → `CATPAW_CLI` → `~/.catpaw-dsh/bin/catpaw-cli` → the 妙手 bundle.
+
+**2. The credential.** Ask the agent to call `catpaw_login`; open the returned URL and scan. `catpaw_auth_status` reports the account and whether the token is still accepted.
+
+Under the hood it is the same pure-HTTP flow the app uses — no Electron:
+
+```
+GET  https://catx.nocode.cn/api/gateway/passport/login-config   -> { loginEntryUrl }
+open {loginEntryUrl}?state=<hex>&redirect=http://127.0.0.1:<port>/callback&sid=<hex>
+race: loopback callback (?token=&state=)  vs  GET /api/gateway/passport/poll-token?sid=<hex>
+write ~/.meituan-catpaw/auth.json  (same shape the app writes)
+```
+
+Personal (Passport) accounts get **no refresh token** — the app itself reports `canRefresh: false` for this provider — so an expired token always means a fresh scan. Enterprise (EPassport) accounts go through the device-code flow at `passport.catpaw.meituan.com` and do return one.
+
+## Use
+
+Open the model picker in the DSH Web GUI and choose **CatPaw (妙手) → one of the 12 models**. Each model exposes its own reasoning-effort row (Off/Low/High/Max, or Off/深度思考 for thinking-only models).
+
+To make it the profile default, add this to `~/.dsh/profiles/desktop/cordis.patch.yml` (or edit it in the GUI):
+
+```yaml
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: catpaw
+    model: "77"
+```
+
+## Tool calling
+
+`catpaw-cli` is an agent runtime, not a chat-completion endpoint: it only streams text. The bridge therefore carries tool calls over a small text protocol.
+
+1. The prompt lists every harness tool (name, description, compact argument schema) inside `<tools>`.
+2. To act, the model emits one marked block:
+
+```
+<<<catpaw_tool_call>>>
+[{"name":"bash","arguments":{"command":"uuidgen"}}]
+<<<end_catpaw_tool_call>>>
+```
+
+3. The adapter parses that payload into real harness `tool-call` blocks, so **DeepSeek Harness** executes the tool and owns the approval decision — CatPaw never runs it.
+4. Results return as `tool_result` messages on the next turn.
+
+The contract is restated after the transcript, because CatPaw's model otherwise prefers its own built-in tools; those stay denied under `permissionMode: dontAsk`. A turn that emits no marker streams as ordinary text.
+
+## Configuration
+
+The row config (see `cordis.patch.yml`) accepts:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `cliPath` | auto-resolved | CLI binary to spawn; resolution: config → `CATPAW_CLI` → `~/.catpaw-dsh/bin/catpaw-cli` → 妙手 bundle |
+| `authPath` | `~/.meituan-catpaw/auth.json` | 妙手 login state |
+| `baseURL` | `https://ai.catpaw.meituan.com` | CatPaw cloud endpoint (the app's endpoint) |
+| `gateway` | `https://catx.nocode.cn` | Login gateway used by `catpaw_login`; model calls still use `baseURL` |
+| `permissionMode` | `dontAsk` | `dontAsk`, `acceptEdits`, `default`, `plan`, `bypassPermissions`, `unsafeBypassPermissions` |
+| `models` | the 12 models listed by 妙手's `/api/agent/maas/model-types` | Catalogue shown in the picker. Each entry: `id` (modelType), `name`, `contextWindow` (default `1024000` = 1M), `maxTokens`, `params` (`context`/`thinking`/`effort`), optional `defaultEffort` |
+| `timeoutMs` | `600000` | Whole-call timeout |
+| `idleTimeoutMs` | `300000` | No-SSE-frame timeout |
+| `systemPrompt` | `transcript` | `transcript` puts DSH's system prompt in a `<system>` block; `none` keeps CatPaw's native prompt |
+| `maxPromptChars` | `120000` | Total prompt budget; oldest messages are dropped and oversized ones clipped to stay under CatPaw's request limit (HTTP 413) |
+| `toolResultChars` | `4000` | Per-tool-result clip |
+| `messageChars` | `20000` | Per-message clip |
+| `directory` | session cwd | Override CatPaw's working directory |
+| `debug` | `false` | Log the CLI server's stdout/stderr to the host console |
+
+`permissionMode` controls CatPaw's own tool loop. `dontAsk` works for read-only file tools; `bypassPermissions` lets CatPaw edit files and run commands without an approval UI. Use the latter only if you intend CatPaw to act on this machine.
+
+### Reasoning effort
+
+Each catalogue entry declares which backend parameters it supports (`params`). The plugin turns those into the harness `reasoning.efforts` ladder and maps the selected effort into CatPaw's `dynamicContext.requestContext.modelParams`:
+
+| Backend params | Harness efforts | Mapping |
+|---|---|---|
+| `context` + `thinking` | Off, 深度思考 (`high`) | `thinking: { enabled: effort !== 'off' }` |
+| `context` + `effort` | Low, High, Max | `effort: 'low' \| 'high' \| 'max'` |
+| `context` + `thinking` + `effort` | Off, Low, High, Max | `off` disables thinking; the rest set `effort` |
+| none (Auto) | — | no Effort row |
+
+`context` is sent as `"1024000"` by default, so every model runs with a 1M-token window unless its catalogue entry overrides `contextWindow`. Verified with DeepSeek-V4.1-Flash: `off` → 0 reasoning chunks; `max` → ~470 chars of reasoning.
+
+## Verify
+
+Headless (a real DSH host, no GUI):
+
+```sh
+cd <repo>
+dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
+# stdout: 你好！有什么可以帮你的吗？
+```
+
+GUI: select **CatPaw 77**, send a message, and confirm the reply. The Plugins panel shows the bundle as **妙手模型桥接** with the paw icon.
+
+## Limitations
+
+- Tool calling is prompt-driven: the model must emit the marker block. If it answers in prose instead, nothing executes — retry or switch model. Verified working with LongCat-2.5 (`10002544`) and DeepSeek-V4.1-Flash (`97`).
+- CatPaw's own tool loop stays denied (`permissionMode: dontAsk`), so the harness tools are the only execution path. Raising it to `bypassPermissions` lets CatPaw act on its own instead, bypassing harness approvals.
+
+- Each harness model call is a fresh CatPaw agent run; the whole DSH transcript is rendered into the prompt. Long sessions re-send context every turn.
+- CatPaw's own tool loop runs server-side. Its tool calls are **not** forwarded as DSH tool calls, and DSH's tools are not available to CatPaw.
+- The token is re-read on every call; once `catpaw_login` writes a new credential the CLI server restarts automatically. Personal accounts cannot refresh, so expiry needs a new scan.
+- `agent.getAvailableModels` only returns `auto` (modelType 0). The real catalogue comes from 妙手's `POST /api/agent/maas/model-types` (`tenant=CatDesk`, `scene=CATX_APP`, `env=EXTERNAL`); all 12 modelTypes it returns were verified to answer. If the account's catalogue changes, refresh `models` from that endpoint.
+- The client module does not declare a `Config` schema, so its row is configured through `cordis.patch.yml` rather than a settings form.

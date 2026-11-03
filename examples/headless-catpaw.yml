@@ -5,7 +5,7 @@
     model: "10002544"
 - insert:
     - id: dsh-catpaw
-      name: '../plugin/index.js'
+      name: '../index.js'
       config:
         permissionMode: dontAsk
         systemPrompt: transcript
