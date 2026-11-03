@@ -71,6 +71,13 @@ OUT="$(DSH_HOME="$TMP/home" dsh verify "只回复两个字：你好" 2>/dev/null
 [ "$OUT" = "你好" ] || { echo "unexpected answer: $OUT" >&2; exit 1; }
 echo "answer: $OUT"
 
+say "driving a tool call through the installed copy"
+NONCE="nonce-$(date +%s)-$$"
+printf '%s' "$NONCE" > "$TMP/probe.txt"
+TOOL_OUT="$(DSH_HOME="$TMP/home" dsh verify "用 bash 执行 cat $TMP/probe.txt，把内容原样告诉我" 2>/dev/null)"
+echo "$TOOL_OUT" | grep -q "$NONCE" || { echo "the tool call did not come back: $TOOL_OUT" >&2; exit 1; }
+echo "tool call round-tripped: $NONCE"
+
 say "asking the installed copy for its own health report"
 REPORT="$(DSH_HOME="$TMP/home" dsh verify "调用 catpaw_doctor 工具，把 report 里的第一行原样贴出来" 2>/dev/null | tail -3)"
 echo "$REPORT" | grep -q "catpaw-cli:" || { echo "catpaw_doctor did not answer: $REPORT" >&2; exit 1; }

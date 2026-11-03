@@ -161,7 +161,8 @@ node --test                        # 89 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、
-# 组合配置、跑一句真模型调用，并确认用的是插件自带的那份 catpaw-cli
+# 组合配置、跑一句真模型调用、走一次真实工具调用、让 doctor 自检，并确认用的是
+# 插件自带的那份 catpaw-cli
 ./scripts/verify-bundle.sh           # 加 --offline 只验组合不调模型
 ./scripts/verify-package.sh          # 只验打包本身：不依赖 DSH，CI 每次都会跑
 ```

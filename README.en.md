@@ -156,7 +156,8 @@ node --test                        # 89 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # the installed shape (what `dsh plugin add` produces): pack, install into a
-# throwaway DSH profile, compose it, answer one prompt, and confirm the vendored
+# throwaway DSH profile, compose it, answer one prompt, round-trip one real tool
+# call, ask the install for its own health report, and confirm the vendored
 # catpaw-cli is the binary in use
 ./scripts/verify-bundle.sh          # --offline skips the model call
 ./scripts/verify-package.sh         # the package alone: no DSH needed, runs in CI
