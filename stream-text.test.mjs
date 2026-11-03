@@ -101,3 +101,25 @@ test("DeepSeek's DSML block is captured too", () => {
   assert.equal(shown + flushed, "先执行。");
   assert.equal(gate.payload().open, DSML_OPEN);
 });
+
+test("text that cannot be the start of a marker is published at once", () => {
+  const { gate } = run([]);  // fresh channel for direct pushes
+  const first = gate.push("第一句话。");
+  assert.equal(first, "第一句话。", "nothing is held back when no marker is possible");
+  assert.equal(gate.push("第二句"), "第二句");
+});
+
+test("only the ambiguous tail waits", () => {
+  const gate = new MarkerGate(new TextChannel());
+  assert.equal(gate.push("看这里 <<<catpaw"), "看这里 ", "the partial marker stays back");
+  assert.equal(gate.push("X"), "<<<catpawX", "a character that breaks the prefix releases it");
+});
+
+test("a marker still split across frames is caught after the adaptive hold", () => {
+  const call = `${TOOL_CALL_OPEN}[{"name":"bash","arguments":{"command":"ls"}}]${TOOL_CALL_CLOSE}`;
+  const frames = ["先说一句。", ...call.match(/[\s\S]{1,2}/g)];
+  const { gate, shown, flushed } = run(frames);
+  assert.equal(shown + flushed, "先说一句。");
+  assert.equal(gate.mode, "tool");
+  assert.equal(JSON.parse(gate.payload().body)[0].name, "bash");
+});

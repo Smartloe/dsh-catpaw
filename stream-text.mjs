@@ -89,7 +89,6 @@ export class MarkerGate {
   constructor(channel, markers = DEFAULT_MARKERS) {
     this.channel = channel;
     this.markers = markers;
-    this.hold = holdFor(markers);
     this.emitted = 0;
     this.mode = "text"; // "text" | "tool"
     this.marker = null;
@@ -128,11 +127,36 @@ export class MarkerGate {
       this.markerIndex = index;
       return head;
     }
-    const safe = text.length - this.hold;
+    const safe = text.length - this.#pendingMarker(text);
     if (safe <= this.emitted) return "";
     const piece = text.slice(this.emitted, safe);
     this.emitted = safe;
     return piece;
+  }
+
+  /**
+   * How many trailing characters have to wait because they may be the start of
+   * a marker.
+   *
+   * Holding back the longest marker unconditionally made the first words of
+   * every answer wait for ~20 more characters — about half a second of dead air
+   * at the speed these models stream. Only a tail that actually matches the
+   * beginning of one of the markers needs to wait; everything else can be shown
+   * as it arrives.
+   */
+  #pendingMarker(text) {
+    let waiting = 0;
+    for (const marker of this.markers) {
+      const open = marker.open;
+      const longest = Math.min(open.length - 1, text.length);
+      for (let length = longest; length > waiting; length -= 1) {
+        if (text.endsWith(open.slice(0, length))) {
+          waiting = length;
+          break;
+        }
+      }
+    }
+    return waiting;
   }
 
   /** Everything still unpublished, once the stream has ended. */
