@@ -125,7 +125,7 @@ CATPAW_CLI=/path/to/catpaw-cli dsh web       # 环境变量
 
 | 键 | 默认 | 含义 |
 |---|---|---|
-| `models` | 上表 12 个 | 模型目录；每项含 `id`、`name`、`contextWindow`、`maxTokens`、`params`、可选 `defaultEffort` |
+| `models` | 上表 12 个（定义在 `index.js` 的 `DEFAULT_MODELS`） | 模型目录；每项含 `id`、`name`、`contextWindow`、`maxTokens`、`params`、可选 `defaultEffort`。行配置里写 `models` 会覆盖内置表 |
 | `cliPath` | 自动解析 | CLI 二进制路径 |
 | `authPath` | `~/.meituan-catpaw/auth.json` | 凭据文件 |
 | `baseURL` | `https://ai.catpaw.meituan.com` | 模型端点 |
@@ -157,7 +157,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test                        # 77 个用例，不联网
+node --test                        # 78 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、

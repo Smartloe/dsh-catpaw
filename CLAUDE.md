@@ -22,7 +22,7 @@ examples/               无头冒烟测试 patch
 scripts/verify-bundle.sh 按安装形态（tarball + profile bundle）验一遍
 ```
 
-修改后先跑 `node --check index.js` 和 `node --test`（五个用例文件，77 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
+修改后先跑 `node --check index.js` 和 `node --test`（五个用例文件，78 条），再用 `examples/headless-catpaw.yml` 做一次无头验证。改了 package.json / files / bundle 相关的东西，再跑 `./scripts/verify-bundle.sh`：它按用户安装后的形态（tarball + profile bundle + 自带 CLI）走一遍。
 
 ## 妙手应用在哪
 

@@ -59,3 +59,11 @@ test("an explicit empty exclusion list keeps the built-in tools", () => {
   assert.deepEqual(readSettings({ excludeNativeTools: false }).excludeNativeTools, []);
   assert.deepEqual(readSettings({ excludeNativeTools: ["bash"] }).excludeNativeTools, ["bash"]);
 });
+
+test("the shipped row does not redeclare the catalogue", async () => {
+  const { readFileSync } = await import("node:fs");
+  const row = readFileSync(new URL("./cordis.patch.yml", import.meta.url), "utf8");
+  // Two copies of the model table is how an edit to one of them does nothing:
+  // the row would win over DEFAULT_MODELS forever after installation.
+  assert.doesNotMatch(row, /^\s+models:/m, "keep the catalogue in index.js only");
+});

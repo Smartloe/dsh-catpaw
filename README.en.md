@@ -121,7 +121,7 @@ The row config (see `cordis.patch.yml`) accepts:
 | `gateway` | `https://catx.nocode.cn` | Login gateway used by `catpaw_login`; model calls still use `baseURL` |
 | `permissionMode` | `dontAsk` | `dontAsk`, `acceptEdits`, `default`, `plan`, `bypassPermissions`, `unsafeBypassPermissions` |
 | `excludeNativeTools` | `true` | Hide CatPaw's built-in tools (`bash`, `read_file`, … 19 names) from the model. `true` uses the built-in list, an array hides exactly those names, `false` keeps them |
-| `models` | the 12 models listed by 妙手's `/api/agent/maas/model-types` | Catalogue shown in the picker. Each entry: `id` (modelType), `name`, `contextWindow` (default `1024000` = 1M), `maxTokens`, `params` (`context`/`thinking`/`effort`), optional `defaultEffort` |
+| `models` | the 12 models in `DEFAULT_MODELS` (index.js), copied from 妙手's `/api/agent/maas/model-types` | Catalogue shown in the picker; declaring it here overrides the built-in list. Each entry: `id` (modelType), `name`, `contextWindow` (default `1024000` = 1M), `maxTokens`, `params` (`context`/`thinking`/`effort`), optional `defaultEffort` |
 | `timeoutMs` | `600000` | Whole-call timeout |
 | `idleTimeoutMs` | `300000` | Timeout with no *content* frame; keep-alives do not count as progress |
 | `systemPrompt` | `transcript` | `transcript` puts DSH's system prompt in a `<system>` block; `none` keeps CatPaw's native prompt |
@@ -152,7 +152,7 @@ Headless (a real DSH host, no GUI):
 
 ```sh
 cd <repo>
-node --test                        # 77 cases, offline
+node --test                        # 78 cases, offline
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # the installed shape (what `dsh plugin add` produces): pack, install into a
