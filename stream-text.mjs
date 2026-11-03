@@ -34,10 +34,15 @@ export const TOOL_CALL_CLOSE = "<<<end_catpaw_tool_call>>>";
 export const LONGCAT_OPEN = "<longcat_tool_call>";
 export const LONGCAT_CLOSE = "</longcat_tool_call>";
 
-/** Default marker set: our block plus LongCat's native one. */
+/** DeepSeek ships its own markup, again as plain text when it has no tools. */
+export const DSML_OPEN = "<\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>";
+export const DSML_CLOSE = "</\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>";
+
+/** Default marker set: our block plus the two native formats seen in the wild. */
 export const DEFAULT_MARKERS = [
   { open: TOOL_CALL_OPEN, close: TOOL_CALL_CLOSE },
   { open: LONGCAT_OPEN, close: LONGCAT_CLOSE },
+  { open: DSML_OPEN, close: DSML_CLOSE },
 ];
 
 /** Longest hold-back needed to stop a marker from splitting across frames. */

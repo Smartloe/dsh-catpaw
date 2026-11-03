@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clipText, parseLongcatCalls, parseToolCalls, renderToolSection } from "./index.js";
+import { clipText, parseDsmlCalls, parseLongcatCalls, parseToolCalls, renderToolSection } from "./index.js";
 
 const aliases = new Map([
   ["dsh_bash", "bash"],
@@ -101,4 +101,22 @@ test("a named-tool variant and a nameless block are handled", () => {
     "<longcat_tool_call></longcat_tool_call>",
   ].join("\n");
   assert.deepEqual(parseLongcatCalls(text), [{ name: "bash", arguments: { command: "ls" } }]);
+});
+
+test("DeepSeek's DSML markup parses, with aliases and several parameters", () => {
+  const text = [
+    "<\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>",
+    '<\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke name="dsh_bash">',
+    '<\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter name="command" string="true">cat /tmp/x</\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter>',
+    '<\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter name="description" string="true">读取</\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter>',
+    "</\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke>",
+    "</\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>",
+  ].join("\n");
+  assert.deepEqual(parseDsmlCalls(text, new Map([["dsh_bash", "bash"]])), [
+    { name: "bash", arguments: { command: "cat /tmp/x", description: "读取" } },
+  ]);
+});
+
+test("DSML without a closing tag yields nothing instead of throwing", () => {
+  assert.deepEqual(parseDsmlCalls("<\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke name=\"dsh_bash\">"), []);
 });

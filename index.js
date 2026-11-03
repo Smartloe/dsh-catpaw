@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { runLogin, validateToken, whoami } from "./login.mjs";
-import { LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
+import { DSML_CLOSE, DSML_OPEN, LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 const PROVIDER = "catpaw";
 const APP_CLI =
@@ -451,8 +451,8 @@ export function renderToolSection(tools) {
     "重要：CatPaw 自带的工具（bash、read_file、write、grep、glob_file_search、"
       + "list_dir、web_fetch 等）在本会话中全部被禁用。调用它们只会收到一条拒绝消息、"
       + "浪费一轮，而且不会产生任何效果。唯一的动作出口是下面的标记块。",
-    "宿主工具在这里带 dsh_ 前缀呈现：需要 bash 就写 dsh_bash，需要读文件就写 dsh_read。"
-      + "前缀之外的工具名一律无效，也不要抱怨名字不匹配——它们不是同一个工具。",
+    "宿主工具在 <tools> 里带 dsh_ 前缀呈现：需要 bash 就写 dsh_bash，需要读文件就写 dsh_read。",
+    "不要输出任何 XML 形式的工具标签（<longcat_tool_call>、<｜｜DSML｜｜ …>、<tool_call> 之类），只认上面这一种标记块。",
     "",
     `需要做事时，输出一个标记块：以 ${TOOL_CALL_OPEN} 开头，接一个 JSON 数组，以 ${TOOL_CALL_CLOSE} 结尾。`,
     '数组元素形如 {"name":"工具名","arguments":{...}}，arguments 需符合该工具的参数 schema。',
@@ -503,6 +503,54 @@ export function parseLongcatCalls(text, aliases = new Map()) {
     );
     for (const pair of pairs) args[pair[1].trim()] = pair[2].trim();
     if (name.startsWith(TOOL_ALIAS_PREFIX) && aliases.has(name)) name = aliases.get(name);
+    calls.push({ name, arguments: args });
+  }
+  return calls;
+}
+
+/**
+ * DeepSeek writes its own markup when it has no native tool to call:
+ *
+ *   <｜｜DSML｜｜ calls>
+ *   <｜｜DSML｜｜ invoke name="dsh_bash">
+ *   <｜｜DSML｜｜ parameter name="command" string="true">cat /tmp/x</｜｜DSML｜｜ parameter>
+ *   </｜｜DSML｜｜ invoke>
+ *   </｜｜DSML｜｜ calls>
+ *
+ * The full-width bars are part of the tag, not decoration.
+ */
+const DSML_OPEN_INVOKE = "<\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke ";
+const DSML_CLOSE_INVOKE = "</\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke>";
+const DSML_OPEN_PARAM = "<\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter ";
+const DSML_CLOSE_PARAM = "</\uFF5C\uFF5CDSML\uFF5C\uFF5C parameter>";
+
+export function parseDsmlCalls(text, aliases = new Map()) {
+  const source = String(text ?? "");
+  const calls = [];
+  let from = 0;
+  for (;;) {
+    const start = source.indexOf(DSML_OPEN_INVOKE, from);
+    if (start < 0) break;
+    const end = source.indexOf(DSML_CLOSE_INVOKE, start);
+    if (end < 0) break;
+    const block = source.slice(start, end);
+    from = end + DSML_CLOSE_INVOKE.length;
+    let name = (block.match(/name\s*=\s*["']([^"']+)["']/)?.[1] ?? "").trim();
+    if (name.length === 0) continue;
+    if (name.startsWith(TOOL_ALIAS_PREFIX) && aliases.has(name)) name = aliases.get(name);
+    const args = {};
+    let pFrom = 0;
+    for (;;) {
+      const pStart = block.indexOf(DSML_OPEN_PARAM, pFrom);
+      if (pStart < 0) break;
+      const pEnd = block.indexOf(DSML_CLOSE_PARAM, pStart);
+      if (pEnd < 0) break;
+      const head = block.slice(pStart, block.indexOf(">", pStart) + 1);
+      const key = head.match(/name\s*=\s*["']([^"']+)["']/)?.[1] ?? "";
+      const value = block.slice(block.indexOf(">", pStart) + 1, pEnd);
+      if (key) args[key.trim()] = value.trim();
+      pFrom = pEnd + DSML_CLOSE_PARAM.length;
+    }
     calls.push({ name, arguments: args });
   }
   return calls;
@@ -573,7 +621,9 @@ function renderBlocks(content, limits) {
         break;
       case "tool-call": {
         const args = clipText(String(block.arguments ?? "{}"), Math.min(limits.messageChars, 2000));
-        parts.push(`[tool call: ${block.name ?? "?"} ${args}]`);
+        // Same names the <tools> section advertises, so the model's own history
+        // does not contradict the protocol it is being asked to follow.
+        parts.push(`[tool call: ${block.name ? aliasTool(String(block.name)) : "?"} ${args}]`);
         break;
       }
       case "tool-addition":
@@ -648,7 +698,7 @@ function renderPrompt(options, settings) {
           '[{"name":"工具名","arguments":{...}}]',
           TOOL_CALL_CLOSE,
           "标记块之外的文本会作为普通回答展示给用户。",
-          `工具名以 <tools> 列表为准（都带 ${TOOL_ALIAS_PREFIX} 前缀），不带前缀的同名工具是本会话禁用的内置工具。`,
+          `工具名以上面的 <tools> 列表为准（都带 ${TOOL_ALIAS_PREFIX} 前缀）。`,
           "CatPaw 自带的 bash / read_file / write / grep 等工具在此会话被禁用，"
             + "调用它们只会失败并浪费一轮；所有动作都必须通过上面的标记块表达。",
           "</tool_protocol>",
@@ -1015,7 +1065,14 @@ class CatPawAdapter {
 
     let toolCalls = [];
     const payload = gate.payload();
-    if (gate.mode === "tool" && payload.open === LONGCAT_OPEN) {
+    if (gate.mode === "tool" && payload.open === DSML_OPEN) {
+      const remainder = DSML_OPEN + gate.remainder();
+      toolCalls = parseDsmlCalls(remainder, aliases);
+      if (toolCalls.length === 0) {
+        const fallback = remainder.replace(/<\/?\uFF5C\uFF5CDSML\uFF5C\uFF5C[^>]*>/g, "").trim();
+        if (fallback) yield* publish("text", fallback);
+      }
+    } else if (gate.mode === "tool" && payload.open === LONGCAT_OPEN) {
       // LongCat's own format: several blocks may follow the first, so the parser
       // sees everything after the opening tag rather than one block.
       const remainder = LONGCAT_OPEN + gate.remainder();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
+import { DSML_CLOSE, DSML_OPEN, LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 /** Feed a list of frames and collect everything the gate published as text. */
 function run(frames) {
@@ -92,4 +92,12 @@ test("the earliest marker wins when both are present", () => {
   const text = `${LONGCAT_OPEN}bash\n<longcat_arg_value>x</longcat_arg_value>${LONGCAT_CLOSE}`;
   const { gate } = run([text, TOOL_CALL_OPEN]);
   assert.equal(gate.payload().open, LONGCAT_OPEN);
+});
+
+test("DeepSeek's DSML block is captured too", () => {
+  const block = `${DSML_OPEN}\n${"<\uFF5C\uFF5CDSML\uFF5C\uFF5C invoke name=\"dsh_bash\">"}\n${DSML_CLOSE}`;
+  const frames = ["先执行。", ...block.match(/[\s\S]{1,4}/g)];
+  const { gate, shown, flushed } = run(frames);
+  assert.equal(shown + flushed, "先执行。");
+  assert.equal(gate.payload().open, DSML_OPEN);
 });
