@@ -125,9 +125,10 @@ plugin_manager install_bundle target=<repo>
 | `excludeNativeTools` | `true` | 关掉妙手自带的工具（`bash`/`read_file`/… 共 19 个）。`true` 用内置名单，数组则按名单，`false` 保留 |
 | `systemPrompt` | `transcript` | `transcript` 把 DSH 的 system prompt 放进 `<system>`；`none` 保留妙手原生提示 |
 | `maxPromptChars` | `120000` | 单轮 prompt 字符预算，超出丢最旧的消息 |
-| `toolResultChars` | `4000` | 单条工具结果截断 |
+| `toolResultChars` | `4000` | 单条工具结果上限，超出时保留首尾、省略中间 |
 | `messageChars` | `20000` | 单条消息截断 |
-| `timeoutMs` / `idleTimeoutMs` | `600000` / `300000` | 总超时 / 无 SSE 帧超时 |
+| `timeoutMs` / `idleTimeoutMs` | `600000` / `300000` | 总超时 / 无**内容帧**超时（心跳帧不算进展） |
+| `directory` | 会话 cwd | 覆盖妙手的工作目录 |
 | `debug` | `false` | 打印 CLI 的 stdout/stderr |
 
 ## 登录是怎么工作的
@@ -147,7 +148,7 @@ write ~/.meituan-catpaw/auth.json
 
 ```sh
 cd <repo>
-node --test                        # 57 个用例，不联网
+node --test                        # 64 个用例，不联网
 dsh headless --patch ./examples/headless-catpaw.yml "只回复两个字：你好"
 
 # 安装形态（= 用户 `dsh plugin add` 之后的样子）：打包、装进一个临时 DSH profile、
@@ -182,7 +183,8 @@ dsh headless --patch ./examples/headless-catpaw.yml "用 bash 执行 cat /tmp/pr
 ## 已知限制
 
 - 模型请求是本机 `catpaw-cli` 进程，只绑 `127.0.0.1`，只有本机能调。
-- 工具调用依赖模型遵守文本协议；不遵守时会退化成纯文本回答，重试或换模型（LongCat-2.5 与 DeepSeek-V4.1-Flash 实测可用）。
+- 工具调用依赖模型遵守文本协议。妙手自带的 19 个工具在启动 CLI 时就被排除了，所以模型只有标记块一条路；偶发情况下它仍会吐自己的原生 XML（插件照样解析），或干脆用纯文本回答——后者重发一次通常就成。LongCat-2.5 与 DeepSeek-V4.1-Flash 实测可用。
+- 后端偶尔会卡住（不发内容帧）。默认 5 分钟没有任何内容帧就中止该轮，并向后端发 `agent.stop`，不会一直转圈。
 - 个人账号 token 无法自动续期，到期需重新扫码。
 - 每轮都把整段对话渲染进 prompt，长会话重复发送上下文；`maxPromptChars` 会丢弃最旧的消息。
 

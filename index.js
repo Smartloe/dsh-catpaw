@@ -200,7 +200,7 @@ function readExclusions(value) {
   return NATIVE_TOOLS;
 }
 
-function readSettings(config) {
+export function readSettings(config) {
   const rawModels = readValue(config?.models, DEFAULT_MODELS);
   const models = Array.isArray(rawModels) && rawModels.length > 0 ? rawModels : DEFAULT_MODELS;
   const permission = readValue(config?.permissionMode, "dontAsk");
