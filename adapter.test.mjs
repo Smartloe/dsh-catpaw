@@ -423,3 +423,27 @@ test("a new credential restarts the CLI between calls, without a DSH restart", a
   assert.equal(starts.length, 2, "the CLI was restarted with the new credential");
   assert.notEqual(starts[1].pid, firstPid);
 });
+
+test("a cancel that closes the generator still leaves a record", async (t) => {
+  const fx = fixtures();
+  const { adapter, tools, dispose } = mount(fx, { gateway: "http://127.0.0.1:9", baseURL: "http://127.0.0.1:9" });
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "text";
+
+  // what the harness does on stop: close the stream instead of waiting for it
+  const controller = new AbortController();
+  const stream = adapter.stream({
+    provider: "catpaw",
+    model: "10002544",
+    messages: [{ role: "user", content: [{ type: "text", text: "你好" }] }],
+    tools: [],
+    signal: controller.signal,
+  });
+  await stream.next();
+  controller.abort();
+  await stream.return(undefined);
+
+  const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
+  const { report } = await doctor.execute({});
+  assert.match(report, /上一次调用: .*stopped · \d+ms — 用户中止/);
+});

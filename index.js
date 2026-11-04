@@ -949,6 +949,10 @@ class CatPawAdapter {
       void this.server.request("agent.stop", { conversationId }).catch(() => {});
     };
     const relay = () => {
+      // Record here rather than after the read loop: when the harness cancels it
+      // may close this generator instead of pulling another chunk, and then the
+      // code after the loop never runs — the stop would leave no trace at all.
+      record("stopped", "用户中止");
       abort.abort(options.signal?.reason ?? new Error("aborted"));
       stopBackend();
     };
