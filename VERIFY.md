@@ -98,6 +98,7 @@ loaded: N exports, 12 models
 | 选中模型后报「找不到 catpaw-cli」 | `catpaw_doctor` 第一行给出的路径；用 `cliPath` 或 `CATPAW_CLI` 指过去 |
 | 报「没有执行权限」 | 插件会自动 `chmod +x` 并重试一次；仍失败说明文件属主不同，手动 `chmod +x` |
 | 正文能出，但**没有 reasoning 块** | 档位是否选了「高」；LongCat 只有 Off/高，Auto 没有档位 |
+| 回答突然断掉/夹着 `[tool call: …]` 这种文字 | 1.4.0 之前的历史渲染格式被模型照抄；已修（历史按标记块渲染 + 旧格式解析）。升级后新会话即正常 |
 | 模型说「我将执行…」但**没有工具卡** | `catpaw_doctor` 的「上一次调用」应为 `tool-calls`；若不是，说明模型没遵守协议——重发一次；再不行确认行配置里 `excludeNativeTools` 没被改成 `false` |
 | 工具卡出现但**一直转圈** | `permissionMode` 是否为 `dontAsk`；出现 `interaction_pending` 说明停在了需要人工确认的模式 |
 | 点**停止**没反应 | 确认加载的是 1.4.0+；停止后 `catpaw_doctor` 的「上一次调用」应显示 `stopped — 用户中止`（不是 `error`） |

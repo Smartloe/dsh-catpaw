@@ -69,7 +69,7 @@ DSH 通过 `options.tools` 传工具定义，但 CLI 只会流文本，所以用
 - prompt 里的 `<tools>` 段列工具与紧凑 schema
 - 模型输出 `<<<catpaw_tool_call>>>` + JSON 数组 + `<<<end_catpaw_tool_call>>>`；工具名带 `dsh_` 前缀（`dsh_bash`、`dsh_read`），解析时映射回宿主真名
 - `stream-text.mjs` 的 `TextChannel` 同时吃增量和快照，`MarkerGate` 在累积文本上扫标记：只把**可能构成标记前缀的尾部**暂留（固定预留 21 字会让首字延迟约半秒）；`stream()` 把结果组装成 `block-start` / `tool-call-delta` / `block-end`，`finish` 用 `{kind:"tool-calls"}`
-- 妙手自带的 19 个工具在启动 CLI 时用 `CATPAW_CONFIG_CONTENT.excludeTools` 排除（通配符 `*` 无效，必须逐个列名）；排除后模型只剩标记块一条路（实测单文件 6/6、双文件 5/6；未排除时约 1/3）。模型仍会偶发原生 XML——`<longcat_tool_call>`、DeepSeek 的 `<｜｜DSML｜｜ invoke>`——`MarkerGate` 把这两种也当标记，分别由 `parseLongcatCalls` / `parseDsmlCalls` 解析；transcript 里的历史工具调用按 `dsh_` 别名渲染，避免和协议自相矛盾
+- 妙手自带的 19 个工具在启动 CLI 时用 `CATPAW_CONFIG_CONTENT.excludeTools` 排除（通配符 `*` 无效，必须逐个列名）；排除后模型只剩标记块一条路（实测单文件 6/6、双文件 5/6；未排除时约 1/3）。模型仍会偶发原生 XML——`<longcat_tool_call>`、DeepSeek 的 `<｜｜DSML｜｜ invoke>`——`MarkerGate` 把这两种也当标记，分别由 `parseLongcatCalls` / `parseDsmlCalls` 解析；transcript 里的历史工具调用**按标记块本身渲染**（只用 `dsh_` 别名），否则模型会照抄“人话”格式、什么都不执行；旧会话遗留的 `[tool call: …]` 也当标记解析（`parseBracketCalls`）
 - 协议在 transcript 之后重申一次（recency），否则模型会退回自带工具
 
 改动这块时注意：`tool-call-delta` 的 `id` 不能为空、`name` 不能是空串，否则不会被装配成块。
