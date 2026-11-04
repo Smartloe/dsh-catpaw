@@ -446,6 +446,8 @@ test("a cancel that closes the generator still leaves a record", async (t) => {
   const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
   const { report } = await doctor.execute({});
   assert.match(report, /上一次调用: .*stopped · \d+ms — 用户中止/);
+  // exactly once: the relay and the loop must not both record the same stop
+  assert.equal((report.match(/stopped/g) ?? []).length, 1, report);
 });
 
 test("the doctor still shows a failure that a later turn overwrote", async (t) => {

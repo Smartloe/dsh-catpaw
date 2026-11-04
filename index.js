@@ -1266,9 +1266,8 @@ class CatPawAdapter {
     }
 
     if (options.signal?.aborted) {
-      // The harness already knows it cancelled; the doctor should not call it a
-      // failure, and it should not read as if nothing happened either.
-      record("stopped", "用户中止");
+      // Already recorded by the abort relay, which fires whether the harness
+      // closes this generator or keeps pulling from it.
       return;
     }
     if (errorCause) {
