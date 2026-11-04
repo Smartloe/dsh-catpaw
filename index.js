@@ -925,7 +925,12 @@ class CatPawAdapter {
     // "was it slow? did it fail?" without the user digging through logs.
     const startedAt = Date.now();
     const record = (outcome, detail = "") => {
-      this.server.lastCall = { at: startedAt, model, ms: Date.now() - startedAt, outcome, detail };
+      const entry = { at: startedAt, model, ms: Date.now() - startedAt, outcome, detail };
+      this.server.lastCall = entry;
+      // A doctor call is itself preceded by a model turn, which overwrites
+      // `lastCall` — so the failure the user is asking about would be gone by
+      // the time the report is built. Keep a short history as well.
+      this.server.recentCalls = [...(this.server.recentCalls ?? []), entry].slice(-6);
     };
     const finishError = function* (error, code) {
       // Three different things were all landing on "error": a real failure, a
@@ -1474,6 +1479,22 @@ function registerCatPawTools(ctx, getSettings, server) {
         const detail = last.detail ? ` — ${last.detail}` : "";
         return `${when} · 模型 ${last.model} · ${last.outcome} · ${last.ms}ms${detail}`;
       });
+
+      // The report itself is produced inside a model turn, so by the time this
+      // runs the "last call" is that turn — not the failure the user asked
+      // about. The short history is what actually answers the question.
+      const recent = (server.recentCalls ?? []).slice(0, -1).slice(-3);
+      if (recent.length > 0) {
+        await step("最近几次调用", async () =>
+          recent
+            .map((call) => {
+              const when = new Date(call.at).toLocaleTimeString();
+              const detail = call.detail ? ` — ${call.detail}` : "";
+              return `${when} · ${call.outcome} · ${call.ms}ms${detail}`;
+            })
+            .join("\n  "),
+        );
+      }
 
       return { report: lines.join("\n") };
     },

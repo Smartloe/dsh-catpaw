@@ -447,3 +447,31 @@ test("a cancel that closes the generator still leaves a record", async (t) => {
   const { report } = await doctor.execute({});
   assert.match(report, /上一次调用: .*stopped · \d+ms — 用户中止/);
 });
+
+test("the doctor still shows a failure that a later turn overwrote", async (t) => {
+  const fx = fixtures();
+  const { adapter, tools, dispose } = mount(fx, { gateway: "http://127.0.0.1:9", baseURL: "http://127.0.0.1:9" });
+  t.after(dispose);
+
+  // 1) a call the user stops
+  process.env.FAKE_SCENARIO = "text";
+  const controller = new AbortController();
+  const stream = adapter.stream({
+    provider: "catpaw",
+    model: "10002544",
+    messages: [{ role: "user", content: [{ type: "text", text: "写一篇长文" }] }],
+    tools: [],
+    signal: controller.signal,
+  });
+  await stream.next();
+  controller.abort();
+  await stream.return(undefined);
+
+  // 2) the turn that asks the doctor, which overwrites "last call"
+  process.env.FAKE_SCENARIO = "text";
+  await run(adapter);
+
+  const doctor = tools.find((tool) => tool.name === "catpaw_doctor");
+  const { report } = await doctor.execute({});
+  assert.match(report, /最近几次调用:[\s\S]*stopped/);
+});
