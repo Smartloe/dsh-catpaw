@@ -172,7 +172,8 @@ test("a tool call whose arguments arrived as an object is still readable", async
     { role: "assistant", content: [{ type: "tool-call", name: "bash", arguments: { command: "ls" } }] },
     { messageChars: 20000, toolResultChars: 4000 },
   );
-  assert.match(rendered, /\[tool call: dsh_bash \{"command":"ls"\}\]/);
+  // the transcript now shows the protocol itself, not a look-alike
+  assert.match(rendered, /<<<catpaw_tool_call>>>\[\{"name":"dsh_bash","arguments":\{"command":"ls"\}\}\]<<<end_catpaw_tool_call>>>/);
   assert.doesNotMatch(rendered, /object Object/);
 });
 

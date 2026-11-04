@@ -38,11 +38,22 @@ export const LONGCAT_CLOSE = "</longcat_tool_call>";
 export const DSML_OPEN = "<\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>";
 export const DSML_CLOSE = "</\uFF5C\uFF5CDSML\uFF5C\uFF5C calls>";
 
+/**
+ * The form this bridge used to render history tool calls in. Models read that
+ * transcript and imitate it verbatim, so a real session produced
+ * `[tool call: dsh_read {...}]` as plain prose and nothing executed. It is a
+ * marker now: parsed into a call instead of shown, and no longer emitted.
+ */
+export const BRACKET_OPEN = "[tool call: ";
+
 /** Default marker set: our block plus the two native formats seen in the wild. */
 export const DEFAULT_MARKERS = [
   { open: TOOL_CALL_OPEN, close: TOOL_CALL_CLOSE },
   { open: LONGCAT_OPEN, close: LONGCAT_CLOSE },
   { open: DSML_OPEN, close: DSML_CLOSE },
+  // no closing sequence exists: a NUL can never appear in the text, which
+  // keeps the gate from inventing an empty body at offset zero
+  { open: BRACKET_OPEN, close: "\u0000" },
 ];
 
 /** Longest hold-back needed to stop a marker from splitting across frames. */

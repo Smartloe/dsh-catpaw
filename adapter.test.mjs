@@ -477,3 +477,21 @@ test("the doctor still shows a failure that a later turn overwrote", async (t) =
   const { report } = await doctor.execute({});
   assert.match(report, /最近几次调用:[\s\S]*stopped/);
 });
+
+test("a call copied out of the old transcript still executes", async (t) => {
+  const fx = fixtures();
+  const { adapter, dispose } = mount(fx);
+  t.after(dispose);
+  process.env.FAKE_SCENARIO = "bracket";
+
+  // the alias table is built from the tools this call was given
+  const chunks = await run(adapter, {
+    tools: [{ name: "read", description: "Read a file.", parameters: { type: "object", properties: { file_path: { type: "string" } } } }],
+  });
+  const calls = chunks.filter((chunk) => chunk.type === "block-end" && chunk.block?.type === "tool-call").map((chunk) => chunk.block);
+  assert.equal(calls.length, 1, JSON.stringify(chunks.map((c) => c.type)));
+  assert.equal(calls[0].name, "read", "the dsh_ alias maps back to the harness name");
+  assert.deepEqual(JSON.parse(calls[0].arguments), { file_path: "/tmp/a.js", todos: [1, 2] });
+  assert.equal(textOf(chunks), "我来读一下文件。", "the call is not shown as prose");
+  assert.deepEqual(finishOf(chunks).reason, { kind: "tool-calls" });
+});

@@ -35,6 +35,7 @@ const corpus = {
   tool: "我来看一下。",
   longcat: "我先确认一下。",
   reasoning: "先想清楚再回答。",
+  bracket: "我来读一下文件。",
   empty: "",
   stalled: "",
 };
@@ -45,6 +46,16 @@ function frames(answer) {
   const out = [];
   if (scenario === "stalled") {
     out.push(null); // no frames at all: the caller keeps the socket open
+    return out;
+  }
+  if (scenario === "bracket") {
+    // exactly what a real session produced when the model copied the old
+    // transcript rendering instead of emitting the protocol
+    const line = '[tool call: dsh_read {"file_path":"/tmp/a.js","todos":[1,2]}]';
+    for (let i = 0; i < answer.length; i += 3) out.push({ type: "model_chunk", data: { content: answer.slice(i, i + 3) } });
+    for (let i = 0; i < line.length; i += 5) out.push({ type: "model_chunk", data: { content: line.slice(i, i + 5) } });
+    out.push({ type: "turn_end", data: { turn: 1, conversationId: "fake-conversation" } });
+    out.push({ type: "agent_end", data: { reason: "completed", conversationId: "fake-conversation" } });
     return out;
   }
   if (scenario === "reasoning") {

@@ -1,0 +1,23 @@
+# Smoke-test overlay. It declares a one-model catalogue on purpose: the
+# shipped row leaves `models` to index.js, and narrowing it here keeps the
+# prompt small while still proving a patch can override the catalogue.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: catpaw
+    model: "10002544"
+- insert:
+    - id: dsh-catpaw
+      name: '../index.js'
+      config:
+        debug: true
+        permissionMode: dontAsk
+        systemPrompt: transcript
+        maxPromptChars: 120000
+        toolResultChars: 4000
+        models:
+          - id: "10002544"
+            name: "LongCat-2.5"
+            contextWindow: 1024000
+            maxTokens: 32768
+            params: ["context", "thinking"]

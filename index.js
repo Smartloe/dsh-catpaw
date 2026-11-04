@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { fetchModelTypes, runLogin, validateToken, whoami } from "./login.mjs";
-import { DSML_CLOSE, DSML_OPEN, LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
+import { BRACKET_OPEN, DSML_CLOSE, DSML_OPEN, LONGCAT_CLOSE, LONGCAT_OPEN, MarkerGate, TextChannel, TOOL_CALL_CLOSE, TOOL_CALL_OPEN } from "./stream-text.mjs";
 
 const PROVIDER = "catpaw";
 const APP_CLI =
@@ -604,6 +604,69 @@ export function parseDsmlCalls(text, aliases = new Map()) {
 }
 
 /** Pull `{name, arguments}` entries out of whatever the model wrapped them in. */
+/**
+ * Calls written in the old transcript rendering, e.g.
+ *
+ *   [tool call: dsh_read {"file_path":"/tmp/a.js"}]
+ *
+ * Sessions that started before the rendering fix still carry this shape, and a
+ * model can repeat it from muscle memory, so it is understood rather than
+ * displayed. The body is scanned with brace/quote awareness because the closing
+ * bracket also appears inside JSON arguments.
+ */
+export function parseBracketCalls(text, aliases = new Map()) {
+  const source = String(text ?? "");
+  const calls = [];
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf(BRACKET_OPEN, from);
+    if (at < 0) break;
+    let i = at + BRACKET_OPEN.length;
+    while (i < source.length && /\s/.test(source[i])) i += 1;
+    const nameStart = i;
+    while (i < source.length && !/[\s{]/.test(source[i])) i += 1;
+    const name = source.slice(nameStart, i);
+    while (i < source.length && /\s/.test(source[i])) i += 1;
+    if (!name || source[i] !== "{") {
+      from = Math.max(i, at + BRACKET_OPEN.length);
+      continue;
+    }
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let j = i; j < source.length; j += 1) {
+      const c = source[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') inString = true;
+      else if (c === "{" || c === "[") depth += 1;
+      else if (c === "}" || c === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          end = j + 1;
+          break;
+        }
+      }
+    }
+    if (end < 0) break;
+    try {
+      const args = JSON.parse(source.slice(i, end));
+      let real = name;
+      if (real.startsWith(TOOL_ALIAS_PREFIX) && aliases.has(real)) real = aliases.get(real);
+      calls.push({ name: real, arguments: args });
+    } catch {
+      // not a call after all: leave it to be shown as the text it is
+    }
+    from = end;
+  }
+  return calls;
+}
+
 export function parseToolCalls(payload, aliases = new Map()) {
   let body = String(payload ?? "").trim();
   const fence = body.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -672,9 +735,11 @@ export function renderBlocks(content, limits) {
         // String({}) would render "[object Object]" and lose the call.
         const raw = typeof block.arguments === "string" ? block.arguments : JSON.stringify(block.arguments ?? {});
         const args = clipText(raw, Math.min(limits.messageChars, 2000));
-        // Same names the <tools> section advertises, so the model's own history
-        // does not contradict the protocol it is being asked to follow.
-        parts.push(`[tool call: ${block.name ? aliasTool(String(block.name)) : "?"} ${args}]`);
+        // Render the protocol itself, not a human-readable look-alike. A real
+        // session showed the model copying a `[tool call: …]` rendering out of
+        // its own history as prose, which executed nothing and stalled the turn.
+        const name = block.name ? aliasTool(String(block.name)) : "?";
+        parts.push(`${TOOL_CALL_OPEN}[{"name":"${name}","arguments":${args}}]${TOOL_CALL_CLOSE}`);
         break;
       }
       case "tool-addition":
@@ -1221,6 +1286,19 @@ class CatPawAdapter {
         const fallback = remainder.replace(/<\/?\uFF5C\uFF5CDSML\uFF5C\uFF5C[^>]*>/g, "").trim();
         if (fallback) yield* publish("text", fallback);
       }
+    } else if (gate.mode === "tool" && payload.open === BRACKET_OPEN) {
+      // This marker has no closing sequence: the call ends where its JSON does,
+      // so it is parsed from the accumulated text rather than a delimited body.
+      const from = textChannel.text.indexOf(BRACKET_OPEN, gate.markerIndex ?? 0);
+      const remainder = textChannel.text.slice(from < 0 ? 0 : from);
+      toolCalls = parseBracketCalls(remainder, aliases);
+      if (toolCalls.length === 0) {
+        const fallback = remainder.trim();
+        if (fallback) yield* publish("text", fallback);
+      }
+      // The call is consumed; nothing after it belongs on screen, and the gate
+      // must not flush it as prose at the end of the stream.
+      gate.mode = "settled";
     } else if (gate.mode === "tool" && payload.open === LONGCAT_OPEN) {
       // LongCat's own format: several blocks may follow the first, so the parser
       // sees everything after the opening tag rather than one block.
