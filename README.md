@@ -35,9 +35,9 @@ DSH agent loop
 ├── package.json             dsh.bundle 清单 + 包入口（仓库根即插件包）
 ├── index.js                 provider、流解析、工具协议、登录工具
 ├── login.mjs                扫码登录（纯 HTTP，不依赖 Electron）
-├── cordis.patch.yml         默认模型表
+├── cordis.patch.yml         插入到 profile 的行配置（模型表在 index.js）
 ├── locale/                  中英文显示名
-├── icon.svg                 插件图标
+├── assets/icon-512.png      插件图标（源图 icon-source.jpg）
 ├── bin/catpaw-cli           妙手自带的 agent CLI（见版权说明）
 ├── examples/
 │   └── headless-catpaw.yml  无头冒烟测试用的 patch
